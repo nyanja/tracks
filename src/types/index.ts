@@ -8,6 +8,10 @@ export interface Activity {
   isActive: boolean;
   type: 'time-tracking' | 'checkbox';
   resetPeriod?: 'daily' | 'weekly' | 'monthly'; // Only for checkbox activities
+  // Goal fields (only applicable for time-tracking activities)
+  goalType?: 'daily' | 'weekly' | 'monthly';
+  targetMinutes?: number;
+  goalIsActive?: boolean;
 }
 
 export interface ActivitySession {
@@ -21,23 +25,7 @@ export interface ActivitySession {
   isRunning: boolean;
 }
 
-export interface Goal {
-  id: string;
-  activityId: string;
-  type: 'daily' | 'weekly' | 'monthly';
-  targetMinutes: number;
-  startDate: string;
-  endDate?: string;
-  isActive: boolean;
-  createdAt: string;
-}
 
-export interface GoalProgress {
-  goalId: string;
-  date: string;
-  minutesCompleted: number;
-  isCompleted: boolean;
-}
 
 export interface DailyCheckbox {
   id: string;

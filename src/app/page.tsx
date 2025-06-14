@@ -1,26 +1,22 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Activity, ActivitySession, Goal, Statistics, DailyCheckbox } from '@/types';
+import { Activity, ActivitySession, Statistics, DailyCheckbox } from '@/types';
 import { ActivityCard } from '@/components/ActivityCard';
 import { TimerCard } from '@/components/TimerCard';
 import { StatisticsCard } from '@/components/StatisticsCard';
-import { GoalCard } from '@/components/GoalCard';
 import { AddActivityForm } from '@/components/AddActivityForm';
-import { AddGoalForm } from '@/components/AddGoalForm';
 import { Plus, Clock, CheckSquare, Square, Play, X } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function Dashboard() {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [sessions, setSessions] = useState<ActivitySession[]>([]);
-  const [goals, setGoals] = useState<Goal[]>([]);
   const [statistics, setStatistics] = useState<Statistics | null>(null);
   const [checkboxes, setCheckboxes] = useState<DailyCheckbox[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddActivity, setShowAddActivity] = useState(false);
-  const [showAddGoal, setShowAddGoal] = useState(false);
-  const [activeTab, setActiveTab] = useState<'activities' | 'goals' | 'statistics'>('activities');
+  const [activeTab, setActiveTab] = useState<'activities' | 'statistics'>('activities');
 
   // Add states for compact buttons functionality
   const [startingSession, setStartingSession] = useState<string | null>(null);
@@ -32,23 +28,20 @@ export default function Dashboard() {
   // Fetch data
   const fetchData = async () => {
     try {
-      const [activitiesRes, sessionsRes, goalsRes, statisticsRes, checkboxesRes] = await Promise.all([
+      const [activitiesRes, sessionsRes, statisticsRes, checkboxesRes] = await Promise.all([
         fetch('/api/activities'),
         fetch('/api/sessions'),
-        fetch('/api/goals'),
         fetch('/api/statistics'),
         fetch('/api/checkboxes'),
       ]);
 
       const activitiesData = await activitiesRes.json();
       const sessionsData = await sessionsRes.json();
-      const goalsData = await goalsRes.json();
       const statisticsData = await statisticsRes.json();
       const checkboxesData = await checkboxesRes.json();
 
       if (activitiesData.success) setActivities(activitiesData.data);
       if (sessionsData.success) setSessions(sessionsData.data);
-      if (goalsData.success) setGoals(goalsData.data);
       if (statisticsData.success) setStatistics(statisticsData.data);
       if (checkboxesData.success) setCheckboxes(checkboxesData.data);
     } catch (error) {
@@ -68,11 +61,7 @@ export default function Dashboard() {
     fetchData(); // Refresh statistics
   };
 
-  const handleGoalAdded = (goal: Goal) => {
-    setGoals([...goals, goal]);
-    setShowAddGoal(false);
-    fetchData(); // Refresh statistics
-  };
+
 
   const handleSessionUpdate = () => {
     fetchData(); // Refresh all data when sessions are updated
@@ -86,13 +75,7 @@ export default function Dashboard() {
     fetchData(); // Refresh all data when an activity is updated
   };
 
-  const handleGoalUpdated = () => {
-    fetchData(); // Refresh all data when a goal is updated
-  };
 
-  const handleGoalDeleted = () => {
-    fetchData(); // Refresh all data when a goal is deleted
-  };
 
   const handleCheckboxToggle = async (activityId: string) => {
     try {
@@ -219,15 +202,12 @@ export default function Dashboard() {
       .filter(s => s.activityId === activityId)
       .reduce((total, session) => total + (session.duration || 0), 0) / 60;
 
-    const dailyGoal = goals.find(g =>
-      g.activityId === activityId &&
-      g.type === 'daily' &&
-      g.isActive
-    );
+    const activity = activities.find(a => a.id === activityId);
+    const hasValidGoal = activity && activity.goalIsActive && activity.goalType === 'daily' && activity.targetMinutes;
 
     return {
       current: Math.round(activityMinutes),
-      target: dailyGoal?.targetMinutes || 0
+      target: hasValidGoal ? activity.targetMinutes! : 0
     };
   };
 
@@ -435,16 +415,6 @@ export default function Dashboard() {
             Activities
           </button>
           <button
-            onClick={() => setActiveTab('goals')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              activeTab === 'goals'
-                ? 'bg-blue-500 text-white'
-                : 'bg-white text-gray-700 hover:bg-gray-50'
-            }`}
-          >
-            Goals
-          </button>
-          <button
             onClick={() => setActiveTab('statistics')}
             className={`px-4 py-2 rounded-lg font-medium transition-colors ${
               activeTab === 'statistics'
@@ -496,49 +466,7 @@ export default function Dashboard() {
           </div>
         )}
 
-        {activeTab === 'goals' && (
-          <div>
-            <div className="flex justify-between items-center mb-6">
-              <h2 className="text-xl font-semibold text-gray-900">Goals</h2>
-              <button
-                onClick={() => setShowAddGoal(true)}
-                className="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition-colors flex items-center"
-              >
-                <Plus className="w-4 h-4 mr-2" />
-                Add Goal
-              </button>
-            </div>
 
-            {goals.length === 0 ? (
-              <div className="text-center py-12">
-                <p className="text-gray-500 mb-4">No goals yet</p>
-                <button
-                  onClick={() => setShowAddGoal(true)}
-                  className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 transition-colors"
-                >
-                  Set Your First Goal
-                </button>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {goals.map((goal) => {
-                  const activity = activities.find((a) => a.id === goal.activityId);
-                  return (
-                    <GoalCard
-                      key={goal.id}
-                      goal={goal}
-                      activity={activity!}
-                      sessions={sessions}
-                      activities={activities}
-                      onGoalUpdated={handleGoalUpdated}
-                      onGoalDeleted={handleGoalDeleted}
-                    />
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
 
         {activeTab === 'statistics' && statistics && (
           <StatisticsCard statistics={statistics} activities={activities} checkboxes={checkboxes} sessions={sessions} />
@@ -553,13 +481,7 @@ export default function Dashboard() {
         />
       )}
 
-      {showAddGoal && (
-        <AddGoalForm
-          activities={activities}
-          onClose={() => setShowAddGoal(false)}
-          onGoalAdded={handleGoalAdded}
-        />
-      )}
+
 
       {/* Compact Manual Time Entry Modal */}
       {showManualEntry && (

@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { Activity, ActivitySession, Goal, DailyCheckbox } from '@/types';
+import { Activity, ActivitySession, DailyCheckbox } from '@/types';
 
 const DATA_DIR = path.join(process.cwd(), 'data');
 
@@ -60,29 +60,7 @@ export class Database {
     }
   }
 
-  // Goals
-  static getGoals(): Goal[] {
-    try {
-      const filePath = getFilePath('goals.json');
-      if (!fs.existsSync(filePath)) {
-        return [];
-      }
-      const data = fs.readFileSync(filePath, 'utf-8');
-      return JSON.parse(data);
-    } catch (error) {
-      console.error('Error reading goals:', error);
-      return [];
-    }
-  }
 
-  static saveGoals(goals: Goal[]): void {
-    try {
-      const filePath = getFilePath('goals.json');
-      fs.writeFileSync(filePath, JSON.stringify(goals, null, 2));
-    } catch (error) {
-      console.error('Error saving goals:', error);
-    }
-  }
 
   // Daily Checkboxes
   static getCheckboxes(): DailyCheckbox[] {

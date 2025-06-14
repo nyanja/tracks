@@ -10,7 +10,6 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
 
     const activities = Database.getActivities();
     const sessions = Database.getSessions();
-    const goals = Database.getGoals();
 
     const now = new Date();
     const today = startOfDay(now);
@@ -64,19 +63,16 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     }
 
     // Calculate completed goals today
-    const todayGoals = goals.filter((goal) => {
-      if (!goal.isActive) return false;
-      if (activityId && goal.activityId !== activityId) return false;
+    const todayGoals = activities.filter((activity) => {
+      if (!activity.goalIsActive || !activity.targetMinutes || activity.goalType !== 'daily') return false;
+      if (activityId && activity.id !== activityId) return false;
 
-      const goalStart = new Date(goal.startDate);
-      const goalEnd = goal.endDate ? new Date(goal.endDate) : new Date();
-
-      return isWithinInterval(today, { start: goalStart, end: goalEnd });
+      return true; // All active daily goals are considered
     });
 
-    const completedGoalsToday = todayGoals.filter((goal) => {
+    const completedGoalsToday = todayGoals.filter((activity) => {
       const goalSessions = sessions.filter((s) =>
-        s.activityId === goal.activityId &&
+        s.activityId === activity.id &&
         s.date === format(today, 'yyyy-MM-dd') &&
         s.duration
       );
@@ -84,7 +80,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       const totalMinutes = goalSessions.reduce((total, session) =>
         total + (session.duration || 0), 0) / 60;
 
-      return totalMinutes >= goal.targetMinutes;
+      return totalMinutes >= activity.targetMinutes!;
     }).length;
 
     // Calculate daily progress for the last 30 days

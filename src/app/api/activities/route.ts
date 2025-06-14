@@ -19,7 +19,7 @@ export async function GET(): Promise<NextResponse<ApiResponse<Activity[]>>> {
 export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse<Activity>>> {
   try {
     const body = await request.json();
-    const { name, category, color, description, type, resetPeriod } = body;
+    const { name, category, color, description, type, resetPeriod, goalType, targetMinutes } = body;
 
     if (!name || !category || !color || !type) {
       return NextResponse.json(
@@ -45,6 +45,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       resetPeriod: type === 'checkbox' ? resetPeriod : undefined,
       createdAt: new Date().toISOString(),
       isActive: true,
+      // Goal fields (only for time-tracking activities)
+      goalType: type === 'time-tracking' ? goalType : undefined,
+      targetMinutes: type === 'time-tracking' && targetMinutes ? parseInt(targetMinutes) : undefined,
+      goalIsActive: type === 'time-tracking' && goalType && targetMinutes ? true : undefined,
     };
 
     const activities = Database.getActivities();
@@ -64,7 +68,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
 export async function PUT(request: NextRequest): Promise<NextResponse<ApiResponse<Activity>>> {
   try {
     const body = await request.json();
-    const { id, name, category, color, description, type, resetPeriod } = body;
+    const { id, name, category, color, description, type, resetPeriod, goalType, targetMinutes, goalIsActive } = body;
 
     if (!id) {
       return NextResponse.json(
@@ -105,6 +109,10 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
       description,
       type,
       resetPeriod: type === 'checkbox' ? resetPeriod : undefined,
+      // Goal fields (only for time-tracking activities)
+      goalType: type === 'time-tracking' ? goalType : undefined,
+      targetMinutes: type === 'time-tracking' && targetMinutes ? parseInt(targetMinutes) : undefined,
+      goalIsActive: type === 'time-tracking' ? goalIsActive : undefined,
     };
 
     activities[activityIndex] = updatedActivity;
@@ -148,11 +156,6 @@ export async function DELETE(request: NextRequest): Promise<NextResponse<ApiResp
     const sessions = Database.getSessions();
     const filteredSessions = sessions.filter((s) => s.activityId !== id);
     Database.saveSessions(filteredSessions);
-
-    // Delete all goals for this activity
-    const goals = Database.getGoals();
-    const filteredGoals = goals.filter((g) => g.activityId !== id);
-    Database.saveGoals(filteredGoals);
 
     // Delete all checkboxes for this activity
     const checkboxes = Database.getCheckboxes();

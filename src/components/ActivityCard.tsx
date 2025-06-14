@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Play, CheckSquare, Clock, Trash2, MoreVertical, Plus, X, Edit } from 'lucide-react';
 import { Activity } from '@/types';
 import { format } from 'date-fns';
+import { AddActivityForm } from './AddActivityForm';
 
 interface ActivityCardProps {
   activity: Activity;
@@ -32,15 +33,6 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted, onA
   const [manualMinutes, setManualMinutes] = useState('');
   const [isAddingTime, setIsAddingTime] = useState(false);
   const [showEditForm, setShowEditForm] = useState(false);
-  const [isUpdating, setIsUpdating] = useState(false);
-
-  // Edit form states
-  const [editName, setEditName] = useState(activity.name);
-  const [editCategory, setEditCategory] = useState(activity.category);
-  const [editColor, setEditColor] = useState(activity.color);
-  const [editDescription, setEditDescription] = useState(activity.description || '');
-  const [editActivityType, setEditActivityType] = useState<'time-tracking' | 'checkbox'>(activity.type);
-  const [editResetPeriod, setEditResetPeriod] = useState<'daily' | 'weekly' | 'monthly'>(activity.resetPeriod || 'daily');
 
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -65,16 +57,6 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted, onA
 
     loadCheckboxState();
   }, [activity.id, activity.type]);
-
-  // Reset edit form when activity changes
-  useEffect(() => {
-    setEditName(activity.name);
-    setEditCategory(activity.category);
-    setEditColor(activity.color);
-    setEditDescription(activity.description || '');
-    setEditActivityType(activity.type);
-    setEditResetPeriod(activity.resetPeriod || 'daily');
-  }, [activity]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -186,42 +168,10 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted, onA
     }
   };
 
-  const updateActivity = async () => {
-    if (!editName.trim() || !editCategory) {
-      alert('Please fill in all required fields');
-      return;
-    }
-
-    setIsUpdating(true);
-    try {
-      const response = await fetch('/api/activities', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          id: activity.id,
-          name: editName.trim(),
-          category: editCategory,
-          color: editColor,
-          description: editDescription.trim() || undefined,
-          type: editActivityType,
-          resetPeriod: editActivityType === 'checkbox' ? editResetPeriod : undefined,
-        }),
-      });
-
-      if (response.ok) {
-        onActivityUpdated?.();
-        setShowEditForm(false);
-        setShowDropdown(false);
-      } else {
-        const error = await response.json();
-        alert(error.error || 'Failed to update activity');
-      }
-    } catch (error) {
-      console.error('Error updating activity:', error);
-      alert('Failed to update activity');
-    } finally {
-      setIsUpdating(false);
-    }
+  const handleActivityUpdated = (updatedActivity: Activity) => {
+    onActivityUpdated?.();
+    setShowEditForm(false);
+    setShowDropdown(false);
   };
 
   const deleteActivity = async () => {
@@ -357,178 +307,14 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted, onA
         </div>
       </div>
 
-      {/* Edit Activity Modal */}
+      {/* Edit Activity Modal using standard AddActivityForm */}
       {showEditForm && (
-        <div className="fixed inset-0 backdrop-blur-md bg-white/10 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-            <div className="flex items-center justify-between p-6 border-b">
-              <h2 className="text-xl font-semibold text-gray-900">Edit Activity</h2>
-              <button
-                onClick={() => setShowEditForm(false)}
-                className="text-gray-400 hover:text-gray-600 transition-colors"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <form onSubmit={(e) => { e.preventDefault(); updateActivity(); }} className="p-6 space-y-4">
-              <div>
-                <label htmlFor="edit-name" className="block text-sm font-medium text-gray-700 mb-2">
-                  Activity Name *
-                </label>
-                <input
-                  type="text"
-                  id="edit-name"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g., Spanish Learning"
-                  required
-                />
-              </div>
-
-              <div>
-                <label htmlFor="edit-category" className="block text-sm font-medium text-gray-700 mb-2">
-                  Category *
-                </label>
-                <select
-                  id="edit-category"
-                  value={editCategory}
-                  onChange={(e) => setEditCategory(e.target.value)}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  required
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>
-                      {cat}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Activity Type *
-                </label>
-                <div className="space-y-3">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="editActivityType"
-                      value="time-tracking"
-                      checked={editActivityType === 'time-tracking'}
-                      onChange={(e) => setEditActivityType(e.target.value as 'time-tracking' | 'checkbox')}
-                      className="mr-3 text-blue-500 focus:ring-blue-500"
-                    />
-                    <div>
-                      <div className="font-medium text-gray-900">Time Tracking Activity</div>
-                      <div className="text-sm text-gray-500">
-                        Track time spent on prolonged activities (e.g., Spanish learning, reading)
-                      </div>
-                    </div>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="editActivityType"
-                      value="checkbox"
-                      checked={editActivityType === 'checkbox'}
-                      onChange={(e) => setEditActivityType(e.target.value as 'time-tracking' | 'checkbox')}
-                      className="mr-3 text-blue-500 focus:ring-blue-500"
-                    />
-                    <div>
-                      <div className="font-medium text-gray-900">Checkbox Activity</div>
-                      <div className="text-sm text-gray-500">
-                        Simple checkboxes for daily habits (e.g., drink water, exercise)
-                      </div>
-                    </div>
-                  </label>
-                </div>
-              </div>
-
-              {editActivityType === 'checkbox' && (
-                <div>
-                  <label htmlFor="edit-resetPeriod" className="block text-sm font-medium text-gray-700 mb-2">
-                    Reset Period *
-                  </label>
-                  <select
-                    id="edit-resetPeriod"
-                    value={editResetPeriod}
-                    onChange={(e) => setEditResetPeriod(e.target.value as 'daily' | 'weekly' | 'monthly')}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  >
-                    <option value="daily">Daily (resets every day)</option>
-                    <option value="weekly">Weekly (resets every week)</option>
-                    <option value="monthly">Monthly (resets every month)</option>
-                  </select>
-                  <p className="text-sm text-gray-500 mt-1">
-                    How often the checkbox should reset for checking again
-                  </p>
-                </div>
-              )}
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Color
-                </label>
-                <div className="grid grid-cols-6 gap-2">
-                  {PRESET_COLORS.map((presetColor) => (
-                    <button
-                      key={presetColor}
-                      type="button"
-                      onClick={() => setEditColor(presetColor)}
-                      className={`w-10 h-10 rounded-full border-2 ${
-                        editColor === presetColor ? 'border-gray-800' : 'border-gray-300'
-                      }`}
-                      style={{ backgroundColor: presetColor }}
-                    />
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <label htmlFor="edit-description" className="block text-sm font-medium text-gray-700 mb-2">
-                  Description (optional)
-                </label>
-                <textarea
-                  id="edit-description"
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="Brief description of the activity..."
-                />
-              </div>
-
-              <div className="flex space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowEditForm(false)}
-                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isUpdating}
-                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
-                >
-                  {isUpdating ? (
-                    <>
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                      Updating...
-                    </>
-                  ) : (
-                    <>
-                      <Edit className="w-4 h-4 mr-2" />
-                      Update Activity
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <AddActivityForm
+          onClose={() => setShowEditForm(false)}
+          onActivityAdded={() => {}} // Not used in edit mode
+          editingActivity={activity}
+          onActivityUpdated={handleActivityUpdated}
+        />
       )}
 
       {/* Manual Time Entry Modal */}

@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { X, Plus } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { X, Plus, Edit } from 'lucide-react';
 import { Activity } from '@/types';
 
 interface AddActivityFormProps {
   onClose: () => void;
   onActivityAdded: (activity: Activity) => void;
+  editingActivity?: Activity; // Optional: if provided, form will be in edit mode
+  onActivityUpdated?: (activity: Activity) => void; // Required when editing
 }
 
 const PRESET_COLORS = [
@@ -19,7 +21,7 @@ const CATEGORIES = [
   'Language', 'Health', 'Hobby', 'Social', 'Other'
 ];
 
-export function AddActivityForm({ onClose, onActivityAdded }: AddActivityFormProps) {
+export function AddActivityForm({ onClose, onActivityAdded, editingActivity, onActivityUpdated }: AddActivityFormProps) {
   const [name, setName] = useState('');
   const [category, setCategory] = useState('');
   const [color, setColor] = useState(PRESET_COLORS[0]);
@@ -27,6 +29,28 @@ export function AddActivityForm({ onClose, onActivityAdded }: AddActivityFormPro
   const [activityType, setActivityType] = useState<'time-tracking' | 'checkbox'>('time-tracking');
   const [resetPeriod, setResetPeriod] = useState<'daily' | 'weekly' | 'monthly'>('daily');
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Goal fields (for time-tracking activities)
+  const [goalType, setGoalType] = useState<'daily' | 'weekly' | 'monthly'>('daily');
+  const [targetMinutes, setTargetMinutes] = useState('');
+  const [goalIsActive, setGoalIsActive] = useState(false);
+
+  const isEditMode = !!editingActivity;
+
+  // Initialize form with editing activity data
+  useEffect(() => {
+    if (editingActivity) {
+      setName(editingActivity.name);
+      setCategory(editingActivity.category);
+      setColor(editingActivity.color);
+      setDescription(editingActivity.description || '');
+      setActivityType(editingActivity.type);
+      setResetPeriod(editingActivity.resetPeriod || 'daily');
+      setGoalType(editingActivity.goalType || 'daily');
+      setTargetMinutes(editingActivity.targetMinutes?.toString() || '');
+      setGoalIsActive(editingActivity.goalIsActive || false);
+    }
+  }, [editingActivity]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,29 +62,43 @@ export function AddActivityForm({ onClose, onActivityAdded }: AddActivityFormPro
 
     setIsSubmitting(true);
     try {
-      const response = await fetch('/api/activities', {
-        method: 'POST',
+      const url = isEditMode ? '/api/activities' : '/api/activities';
+      const method = isEditMode ? 'PUT' : 'POST';
+
+      const body = {
+        ...(isEditMode && { id: editingActivity.id }),
+        name: name.trim(),
+        category,
+        color,
+        description: description.trim() || undefined,
+        type: activityType,
+        resetPeriod: activityType === 'checkbox' ? resetPeriod : undefined,
+        // Goal fields (only for time-tracking activities)
+        goalType: activityType === 'time-tracking' ? goalType : undefined,
+        targetMinutes: activityType === 'time-tracking' && targetMinutes ? targetMinutes : undefined,
+        goalIsActive: activityType === 'time-tracking' && targetMinutes ? goalIsActive : undefined,
+      };
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          category,
-          color,
-          description: description.trim() || undefined,
-          type: activityType,
-          resetPeriod: activityType === 'checkbox' ? resetPeriod : undefined,
-        }),
+        body: JSON.stringify(body),
       });
 
       if (response.ok) {
         const result = await response.json();
-        onActivityAdded(result.data);
+        if (isEditMode) {
+          onActivityUpdated?.(result.data);
+        } else {
+          onActivityAdded(result.data);
+        }
       } else {
         const error = await response.json();
-        alert(error.error || 'Failed to create activity');
+        alert(error.error || `Failed to ${isEditMode ? 'update' : 'create'} activity`);
       }
     } catch (error) {
-      console.error('Error creating activity:', error);
-      alert('Failed to create activity');
+      console.error(`Error ${isEditMode ? 'updating' : 'creating'} activity:`, error);
+      alert(`Failed to ${isEditMode ? 'update' : 'create'} activity`);
     } finally {
       setIsSubmitting(false);
     }
@@ -70,7 +108,9 @@ export function AddActivityForm({ onClose, onActivityAdded }: AddActivityFormPro
     <div className="fixed inset-0 backdrop-blur-md bg-white/10 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
         <div className="flex items-center justify-between p-6 border-b">
-          <h2 className="text-xl font-semibold text-gray-900">Add New Activity</h2>
+          <h2 className="text-xl font-semibold text-gray-900">
+            {isEditMode ? 'Edit Activity' : 'Add New Activity'}
+          </h2>
           <button
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600 transition-colors"
@@ -106,7 +146,7 @@ export function AddActivityForm({ onClose, onActivityAdded }: AddActivityFormPro
               className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             >
-              <option value="">Select a category</option>
+              {!category && <option value="">Select a category</option>}
               {CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>
                   {cat}
@@ -176,6 +216,58 @@ export function AddActivityForm({ onClose, onActivityAdded }: AddActivityFormPro
             </div>
           )}
 
+          {activityType === 'time-tracking' && (
+            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-medium text-gray-700">Goal Settings</h3>
+                <label className="flex items-center">
+                  <input
+                    type="checkbox"
+                    checked={goalIsActive}
+                    onChange={(e) => setGoalIsActive(e.target.checked)}
+                    className="mr-2 text-blue-500 focus:ring-blue-500"
+                  />
+                  <span className="text-sm text-gray-600">Enable Goal</span>
+                </label>
+              </div>
+
+              {goalIsActive && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="goalType" className="block text-sm font-medium text-gray-700 mb-2">
+                      Goal Type
+                    </label>
+                    <select
+                      id="goalType"
+                      value={goalType}
+                      onChange={(e) => setGoalType(e.target.value as 'daily' | 'weekly' | 'monthly')}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label htmlFor="targetMinutes" className="block text-sm font-medium text-gray-700 mb-2">
+                      Target Minutes
+                    </label>
+                    <input
+                      type="number"
+                      id="targetMinutes"
+                      value={targetMinutes}
+                      onChange={(e) => setTargetMinutes(e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      placeholder="30"
+                      min="1"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Color
@@ -225,12 +317,12 @@ export function AddActivityForm({ onClose, onActivityAdded }: AddActivityFormPro
               {isSubmitting ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                  Creating...
+                  {isEditMode ? 'Updating...' : 'Creating...'}
                 </>
               ) : (
                 <>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Activity
+                  {isEditMode ? <Edit className="w-4 h-4 mr-2" /> : <Plus className="w-4 h-4 mr-2" />}
+                  {isEditMode ? 'Update Activity' : 'Add Activity'}
                 </>
               )}
             </button>
