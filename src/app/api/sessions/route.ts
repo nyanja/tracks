@@ -42,7 +42,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
 export async function POST(request: NextRequest): Promise<NextResponse<ApiResponse<ActivitySession>>> {
   try {
     const body = await request.json();
-    const { activityId, notes } = body;
+    const { activityId, notes, startTime: providedStartTime, endTime: providedEndTime, duration: providedDuration, date: providedDate, isRunning: providedIsRunning } = body;
 
     if (!activityId) {
       return NextResponse.json(
@@ -52,6 +52,28 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     }
 
     const now = new Date();
+
+    // Handle manual time entry (when duration is provided)
+    if (providedDuration && providedStartTime && providedEndTime) {
+      const newSession: ActivitySession = {
+        id: uuidv4(),
+        activityId,
+        startTime: providedStartTime,
+        endTime: providedEndTime,
+        duration: providedDuration,
+        date: providedDate || format(now, 'yyyy-MM-dd'),
+        notes,
+        isRunning: providedIsRunning !== undefined ? providedIsRunning : false,
+      };
+
+      const sessions = Database.getSessions();
+      sessions.push(newSession);
+      Database.saveSessions(sessions);
+
+      return NextResponse.json({ success: true, data: newSession }, { status: 201 });
+    }
+
+    // Handle timer session (existing logic)
     const startTime = now.toISOString();
     const date = format(now, 'yyyy-MM-dd');
 
@@ -82,9 +104,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
 
     return NextResponse.json({ success: true, data: newSession }, { status: 201 });
   } catch (error) {
-    console.error('Error starting session:', error);
+    console.error('Error creating session:', error);
     return NextResponse.json(
-      { success: false, error: 'Failed to start session' },
+      { success: false, error: 'Failed to create session' },
       { status: 500 }
     );
   }

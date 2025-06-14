@@ -1,6 +1,6 @@
 'use client';
 
-import { Statistics, Activity, DailyCheckbox } from '@/types';
+import { Statistics, Activity, DailyCheckbox, ActivitySession } from '@/types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { format, subDays } from 'date-fns';
 
@@ -8,6 +8,7 @@ interface StatisticsCardProps {
   statistics: Statistics;
   activities: Activity[];
   checkboxes: DailyCheckbox[];
+  sessions: ActivitySession[];
 }
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
@@ -15,7 +16,12 @@ const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'
 // Component for the checkbox activity grid visualization
 function CheckboxActivityGrid({ activity, checkboxes }: { activity: Activity; checkboxes: DailyCheckbox[] }) {
   // Generate last 90 days (approximately 3 months)
-  const days = [];
+  const days: {
+    date: string;
+    dateObj: Date;
+    isChecked: boolean;
+    dayOfWeek: number;
+  }[] = [];
   const today = new Date();
 
   for (let i = 89; i >= 0; i--) {
@@ -25,43 +31,105 @@ function CheckboxActivityGrid({ activity, checkboxes }: { activity: Activity; ch
 
     days.push({
       date: dateStr,
+      dateObj: date,
       isChecked: checkbox?.isChecked || false,
-      dayOfWeek: date.getDay(),
+      dayOfWeek: date.getDay(), // 0 = Sunday, 1 = Monday, etc.
     });
   }
 
-  // Group days into weeks (7 days each)
-  const weeks = [];
-  for (let i = 0; i < days.length; i += 7) {
-    weeks.push(days.slice(i, i + 7));
+  // Create month headers
+  const monthHeaders: { month: string; span: number }[] = [];
+  let currentMonth = '';
+  let monthSpan = 0;
+
+  days.forEach((day) => {
+    const monthKey = format(day.dateObj, 'MMM');
+
+    if (currentMonth !== monthKey) {
+      if (monthSpan > 0) {
+        monthHeaders.push({ month: currentMonth, span: monthSpan });
+      }
+      currentMonth = monthKey;
+      monthSpan = 0;
+    }
+    monthSpan++;
+  });
+
+  // Add the last month
+  if (monthSpan > 0) {
+    monthHeaders.push({ month: currentMonth, span: monthSpan });
   }
+
+  // Create grid rows for each day of the week
+  const dayNames = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+  const gridRows = dayNames.map((dayName, dayOfWeek) => {
+    return {
+      dayName,
+      dayOfWeek,
+      days: days.map(day => day.dayOfWeek === dayOfWeek ? day : null)
+    };
+  });
 
   return (
     <div className="p-4">
-      <h4 className="text-sm font-medium text-gray-700 mb-3" style={{ color: activity.color }}>
+      <h4 className="text-sm font-bold text-gray-700 mb-3" style={{ color: activity.color }}>
         {activity.name}
       </h4>
-      <div className="space-y-1">
-        {weeks.map((week, weekIndex) => (
-          <div key={weekIndex} className="flex space-x-1">
-            {week.map((day) => (
+
+      <div className="overflow-x-auto">
+        <div className="inline-block min-w-full">
+          {/* Month headers */}
+          <div className="flex mb-1">
+            <div className="w-10"></div> {/* Space for day labels */}
+            {monthHeaders.map((header, index) => (
               <div
-                key={day.date}
-                className={`w-3 h-3 rounded-sm border ${
-                  day.isChecked
-                    ? 'border-green-300'
-                    : 'border-gray-200'
-                }`}
-                style={{
-                  backgroundColor: day.isChecked ? activity.color : '#f9fafb',
-                  opacity: day.isChecked ? 0.8 : 0.3,
-                }}
-                title={`${day.date} - ${day.isChecked ? 'Completed' : 'Not completed'}`}
-              />
+                key={index}
+                className="text-xs text-gray-500 text-center"
+                style={{ width: `50px` }}
+              >
+                {header.month}
+              </div>
             ))}
           </div>
-        ))}
+
+          {/* Grid rows */}
+          {gridRows.map((row) => (
+            <div key={row.dayOfWeek} className="flex items-center">
+              {/* Day label */}
+              <div className="w-10 text-xs text-gray-500 text-right pr-2">
+                {row.dayName}
+              </div>
+
+              {/* Day squares */}
+              <div className="flex">
+                {row.days.map((day, index) => (
+                  day &&
+                  <div
+                    key={index}
+                    className={`w-3 h-3 border mr-1 ${
+                      day?.isChecked
+                        ? 'border-gray-800'
+                        : day
+                        ? 'border-gray-400'
+                        : 'border-transparent'
+                    }`}
+                    style={{
+                      backgroundColor: day?.isChecked
+                        ? activity.color
+                        : day
+                        ? '#f9fafb'
+                        : 'transparent',
+                      opacity: day?.isChecked ? 0.8 : day ? 0.3 : 0,
+                    }}
+                    title={day ? `${day.date} - ${day.isChecked ? 'Completed' : 'Not completed'}` : ''}
+                  />
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
+
       <div className="flex items-center justify-between text-xs text-gray-500 mt-2">
         <span>90 days ago</span>
         <span>Today</span>
@@ -70,7 +138,7 @@ function CheckboxActivityGrid({ activity, checkboxes }: { activity: Activity; ch
   );
 }
 
-export function StatisticsCard({ statistics, activities, checkboxes }: StatisticsCardProps) {
+export function StatisticsCard({ statistics, activities, checkboxes, sessions }: StatisticsCardProps) {
   // Filter checkbox activities
   const checkboxActivities = activities.filter(activity => activity.type === 'checkbox' && activity.isActive);
 
@@ -84,14 +152,6 @@ export function StatisticsCard({ statistics, activities, checkboxes }: Statistic
             <div className="flex justify-between">
               <span className="text-sm text-gray-600">Today:</span>
               <span className="font-medium">{statistics.totalTimeToday}m</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-600">This Week:</span>
-              <span className="font-medium">{statistics.totalTimeWeek}m</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-sm text-gray-600">This Month:</span>
-              <span className="font-medium">{statistics.totalTimeMonth}m</span>
             </div>
           </div>
         </div>
@@ -133,7 +193,7 @@ export function StatisticsCard({ statistics, activities, checkboxes }: Statistic
           <p className="text-sm text-gray-600 mb-6">
             Grid shows the last 90 days. Each square represents a day - filled squares indicate completed activities.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 gap-6">
             {checkboxActivities.map(activity => (
               <CheckboxActivityGrid
                 key={activity.id}
@@ -145,84 +205,119 @@ export function StatisticsCard({ statistics, activities, checkboxes }: Statistic
         </div>
       )}
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Daily Progress Chart */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Daily Progress (Last 30 Days)</h3>
-          <div className="h-64">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={statistics.dailyProgress}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="date"
-                  tickFormatter={(value) => {
-                    const date = new Date(value);
-                    return `${date.getMonth() + 1}/${date.getDate()}`;
-                  }}
-                />
-                <YAxis />
-                <Tooltip
-                  labelFormatter={(value) => {
-                    const date = new Date(value);
-                    return date.toLocaleDateString();
-                  }}
-                  formatter={(value) => [`${value} minutes`, 'Time']}
-                />
-                <Bar dataKey="totalMinutes" fill="#3B82F6" />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
+      {/* Individual Activity Charts */}
+      {activities.filter(activity => activity.type === 'time-tracking' && activity.isActive).length > 0 && (
+        <div className="space-y-6">
+          <h3 className="text-lg font-semibold text-gray-900">Daily Progress by Activity (Last 30 Days)</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {activities
+              .filter(activity => activity.type === 'time-tracking' && activity.isActive)
+              .map((activity, index) => {
+                // Create daily progress data for this specific activity using actual session data
+                const activityDailyData = statistics.dailyProgress.map(day => {
+                  // Filter sessions for this activity and date
+                  const daySessions = sessions.filter(session =>
+                    session.activityId === activity.id &&
+                    session.date === day.date &&
+                    session.duration
+                  );
 
-        {/* Activity Breakdown */}
-        <div className="bg-white rounded-lg shadow p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Breakdown</h3>
-          {statistics.activityBreakdown.length > 0 ? (
-            <div className="space-y-4">
-              <div className="h-48">
-                <ResponsiveContainer width="100%" height="100%">
-                  <PieChart>
-                    <Pie
-                      data={statistics.activityBreakdown}
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      fill="#8884d8"
-                      dataKey="totalMinutes"
-                      label={({ activityName, percentage }) => `${activityName} ${percentage}%`}
-                    >
-                      {statistics.activityBreakdown.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                      ))}
-                    </Pie>
-                    <Tooltip formatter={(value) => [`${value} minutes`, 'Time']} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="space-y-2">
-                {statistics.activityBreakdown.map((activity, index) => (
-                  <div key={activity.activityId} className="flex items-center justify-between">
-                    <div className="flex items-center">
-                      <div
-                        className="w-3 h-3 rounded-full mr-2"
-                        style={{ backgroundColor: COLORS[index % COLORS.length] }}
-                      />
-                      <span className="text-sm font-medium">{activity.activityName}</span>
-                    </div>
-                    <div className="text-sm text-gray-600">
-                      {activity.totalMinutes}m ({activity.percentage}%)
+                  // Calculate total minutes for this activity on this day
+                  const totalMinutes = daySessions.reduce((total, session) =>
+                    total + (session.duration || 0), 0
+                  ) / 60; // Convert from seconds to minutes
+
+                  return {
+                    ...day,
+                    totalMinutes: Math.round(totalMinutes)
+                  };
+                });
+
+                return (
+                  <div key={activity.id} className="bg-white rounded-lg shadow p-6">
+                    <h4 className="text-lg font-semibold mb-4" style={{ color: activity.color }}>
+                      {activity.name}
+                    </h4>
+                    <div className="h-64">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={activityDailyData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis
+                            dataKey="date"
+                            tickFormatter={(value) => {
+                              const date = new Date(value);
+                              return `${date.getMonth() + 1}/${date.getDate()}`;
+                            }}
+                          />
+                          <YAxis />
+                          <Tooltip
+                            labelFormatter={(value) => {
+                              const date = new Date(value);
+                              return date.toLocaleDateString();
+                            }}
+                            formatter={(value) => [`${value} minutes`, 'Time']}
+                          />
+                          <Bar
+                            dataKey="totalMinutes"
+                            fill={activity.color || COLORS[index % COLORS.length]}
+                          />
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-500">
-              No activity data available
-            </div>
-          )}
+                );
+              })}
+          </div>
         </div>
+      )}
+
+      {/* Activity Breakdown Pie Chart */}
+      <div className="bg-white rounded-lg shadow p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Activity Breakdown</h3>
+        {statistics.activityBreakdown.length > 0 ? (
+          <div className="space-y-4">
+            <div className="h-48">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={statistics.activityBreakdown}
+                    cx="50%"
+                    cy="50%"
+                    outerRadius={80}
+                    fill="#8884d8"
+                    dataKey="totalMinutes"
+                    label={({ activityName, percentage }) => `${activityName} ${percentage}%`}
+                  >
+                    {statistics.activityBreakdown.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => [`${value} minutes`, 'Time']} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="space-y-2">
+              {statistics.activityBreakdown.map((activity, index) => (
+                <div key={activity.activityId} className="flex items-center justify-between">
+                  <div className="flex items-center">
+                    <div
+                      className="w-3 h-3 rounded-full mr-2"
+                      style={{ backgroundColor: COLORS[index % COLORS.length] }}
+                    />
+                    <span className="text-sm font-medium">{activity.activityName}</span>
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {activity.totalMinutes}m ({activity.percentage}%)
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-gray-500">
+            No activity data available
+          </div>
+        )}
       </div>
     </div>
   );

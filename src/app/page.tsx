@@ -8,7 +8,8 @@ import { StatisticsCard } from '@/components/StatisticsCard';
 import { GoalCard } from '@/components/GoalCard';
 import { AddActivityForm } from '@/components/AddActivityForm';
 import { AddGoalForm } from '@/components/AddGoalForm';
-import { Plus, BarChart3, Target, Clock } from 'lucide-react';
+import { Plus, Clock, CheckSquare, Square, Play, X } from 'lucide-react';
+import { format } from 'date-fns';
 
 export default function Dashboard() {
   const [activities, setActivities] = useState<Activity[]>([]);
@@ -20,6 +21,13 @@ export default function Dashboard() {
   const [showAddActivity, setShowAddActivity] = useState(false);
   const [showAddGoal, setShowAddGoal] = useState(false);
   const [activeTab, setActiveTab] = useState<'activities' | 'goals' | 'statistics'>('activities');
+
+  // Add states for compact buttons functionality
+  const [startingSession, setStartingSession] = useState<string | null>(null);
+  const [stoppingSession, setStoppingSession] = useState<string | null>(null);
+  const [showManualEntry, setShowManualEntry] = useState<string | null>(null);
+  const [manualMinutes, setManualMinutes] = useState('');
+  const [isAddingTime, setIsAddingTime] = useState(false);
 
   // Fetch data
   const fetchData = async () => {
@@ -74,7 +82,154 @@ export default function Dashboard() {
     fetchData(); // Refresh all data when an activity is deleted
   };
 
+  const handleActivityUpdated = () => {
+    fetchData(); // Refresh all data when an activity is updated
+  };
+
+  const handleGoalUpdated = () => {
+    fetchData(); // Refresh all data when a goal is updated
+  };
+
+  const handleGoalDeleted = () => {
+    fetchData(); // Refresh all data when a goal is deleted
+  };
+
+  const handleCheckboxToggle = async (activityId: string) => {
+    try {
+      const response = await fetch('/api/checkboxes', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          activityId,
+          date: today,
+          isChecked: true,
+        }),
+      });
+
+      if (response.ok) {
+        await fetchData(); // Refresh data after toggling
+      } else {
+        console.error('Failed to toggle checkbox');
+      }
+    } catch (error) {
+      console.error('Error toggling checkbox:', error);
+    }
+  };
+
+  // Add compact button functionality
+  const startCompactSession = async (activityId: string) => {
+    setStartingSession(activityId);
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ activityId }),
+      });
+
+      if (response.ok) {
+        handleSessionUpdate();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to start session');
+      }
+    } catch (error) {
+      console.error('Error starting session:', error);
+      alert('Failed to start session');
+    } finally {
+      setStartingSession(null);
+    }
+  };
+
+  const stopCompactSession = async (sessionId: string) => {
+    setStoppingSession(sessionId);
+    try {
+      const response = await fetch('/api/sessions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: sessionId }),
+      });
+
+      if (response.ok) {
+        handleSessionUpdate();
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to stop session');
+      }
+    } catch (error) {
+      console.error('Error stopping session:', error);
+      alert('Failed to stop session');
+    } finally {
+      setStoppingSession(null);
+    }
+  };
+
+  const addCompactManualTime = async (activityId: string) => {
+    const minutes = parseInt(manualMinutes);
+    if (!minutes || minutes <= 0) {
+      alert('Please enter a valid number of minutes');
+      return;
+    }
+
+    setIsAddingTime(true);
+    try {
+      const now = new Date();
+      const startTime = new Date(now.getTime() - minutes * 60 * 1000);
+
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          activityId,
+          startTime: startTime.toISOString(),
+          endTime: now.toISOString(),
+          duration: minutes * 60, // Convert to seconds
+          date: format(now, 'yyyy-MM-dd'),
+          isRunning: false,
+        }),
+      });
+
+      if (response.ok) {
+        handleSessionUpdate();
+        setShowManualEntry(null);
+        setManualMinutes('');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to add time');
+      }
+    } catch (error) {
+      console.error('Error adding manual time:', error);
+      alert('Failed to add time');
+    } finally {
+      setIsAddingTime(false);
+    }
+  };
+
   const runningSessions = sessions.filter((s) => s.isRunning);
+
+  // Get today's data
+  const today = format(new Date(), 'yyyy-MM-dd');
+  const todaySessions = sessions.filter(s => s.date === today && s.duration);
+  const todayCheckboxes = checkboxes.filter(c => c.date === today);
+
+  // Calculate activity progress for today
+  const getActivityProgress = (activityId: string) => {
+    const activityMinutes = todaySessions
+      .filter(s => s.activityId === activityId)
+      .reduce((total, session) => total + (session.duration || 0), 0) / 60;
+
+    const dailyGoal = goals.find(g =>
+      g.activityId === activityId &&
+      g.type === 'daily' &&
+      g.isActive
+    );
+
+    return {
+      current: Math.round(activityMinutes),
+      target: dailyGoal?.targetMinutes || 0
+    };
+  };
 
   if (loading) {
     return (
@@ -87,8 +242,18 @@ export default function Dashboard() {
     );
   }
 
+  // Filter activities for quick stats
+  const timeTrackingActivities = activities.filter(a => a.type === 'time-tracking' && a.isActive);
+  const checkboxActivities = activities.filter(a => a.type === 'checkbox' && a.isActive);
+  const checkedToday = checkboxActivities.filter(a =>
+    todayCheckboxes.some(c => c.activityId === a.id && c.isChecked)
+  );
+  const uncheckedToday = checkboxActivities.filter(a =>
+    !todayCheckboxes.some(c => c.activityId === a.id && c.isChecked)
+  );
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         {/* Header */}
         <div className="mb-8">
@@ -99,54 +264,141 @@ export default function Dashboard() {
         </div>
 
         {/* Quick Stats */}
-        {statistics && (
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <Clock className="w-8 h-8 text-blue-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Today</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {statistics.totalTimeToday}m
-                  </p>
-                </div>
+        <div className="bg-white rounded-lg shadow p-6 mb-8">
+
+          {/* Time Tracking Activities */}
+          {timeTrackingActivities.length > 0 && (
+            <div className="mb-6">
+              <div className="space-y-3">
+                {timeTrackingActivities.map(activity => {
+                  const progress = getActivityProgress(activity.id);
+                  const percentage = progress.target > 0 ? (progress.current / progress.target) * 100 : 0;
+                  const runningSession = runningSessions.find(s => s.activityId === activity.id);
+
+                  return (
+                    <div key={activity.id} className="flex items-center space-x-3">
+                      <div className="flex-1">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-sm font-medium text-gray-900">{activity.name}</span>
+                          <span className="text-sm text-gray-600">
+                             {progress.current}{progress.target > 0 ? `/${progress.target} min` : ''}
+                           </span>
+                        </div>
+                        {progress.target > 0 && (
+                          <div className="w-full bg-gray-200 rounded-full h-2">
+                            <div
+                              className="h-2 rounded-full transition-all duration-300"
+                              style={{
+                                width: `${Math.min(percentage, 100)}%`,
+                                backgroundColor: activity.color
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Compact Action Buttons */}
+                      <div className="flex items-center space-x-2">
+                        {runningSession ? (
+                          <button
+                            onClick={() => stopCompactSession(runningSession.id)}
+                            disabled={stoppingSession === runningSession.id}
+                            className="p-2 bg-red-500 text-white rounded-lg hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="Stop Timer"
+                          >
+                            {stoppingSession === runningSession.id ? (
+                              <Clock className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Square className="w-4 h-4" />
+                            )}
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => startCompactSession(activity.id)}
+                            disabled={startingSession === activity.id}
+                            className="p-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                            title="Start Timer"
+                          >
+                            {startingSession === activity.id ? (
+                              <Clock className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Play className="w-4 h-4" />
+                            )}
+                          </button>
+                        )}
+
+                        <button
+                          onClick={() => setShowManualEntry(activity.id)}
+                          className="p-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+                          title="Add Time"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <BarChart3 className="w-8 h-8 text-green-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">This Week</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {statistics.totalTimeWeek}m
-                  </p>
+          )}
+
+          {/* Checkbox Activities */}
+          {checkboxActivities.length > 0 && (
+            <div className="space-y-4">
+              {/* Checked Checkboxes */}
+              {checkedToday.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-green-700 mb-2">Completed Today</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {checkedToday.map(activity => (
+                      <div
+                        key={activity.id}
+                        className="flex items-center space-x-2 px-3 py-1 rounded-full text-sm"
+                        style={{ backgroundColor: `${activity.color}20`, color: activity.color }}
+                      >
+                        <CheckSquare className="w-4 h-4" />
+                        <span>{activity.name}</span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </div>
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <Target className="w-8 h-8 text-purple-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Streak</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {statistics.streakDays} days
-                  </p>
+              )}
+
+              {/* Unchecked Checkboxes - Vertical List */}
+              {uncheckedToday.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-gray-600 mb-3">Not Completed</h3>
+                  <div className="space-y-2">
+                    {uncheckedToday.map(activity => (
+                      <div
+                        key={activity.id}
+                        className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg cursor-pointer transition-colors"
+                        onClick={() => handleCheckboxToggle(activity.id)}
+                      >
+                        <div className="flex-shrink-0">
+                          <Square
+                            className="w-5 h-5 text-gray-400 hover:text-gray-600 transition-colors"
+                            style={{ color: activity.color }}
+                          />
+                        </div>
+                        <span className="text-sm text-gray-700 hover:text-gray-900 transition-colors">
+                          {activity.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
-            <div className="bg-white rounded-lg shadow p-6">
-              <div className="flex items-center">
-                <Target className="w-8 h-8 text-orange-500" />
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600">Goals Today</p>
-                  <p className="text-2xl font-bold text-gray-900">
-                    {statistics.completedGoalsToday}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+          )}
+
+          {/* Empty State */}
+          {timeTrackingActivities.length === 0 && checkboxActivities.length === 0 && (
+             <p className="text-gray-500 text-center py-4">
+               No activities to track today. Create some activities to get started!
+             </p>
+           )}
+        </div>
 
         {/* Running Sessions */}
         {runningSessions.length > 0 && (
@@ -236,6 +488,7 @@ export default function Dashboard() {
                     activity={activity}
                     onSessionUpdate={handleSessionUpdate}
                     onActivityDeleted={handleActivityDeleted}
+                    onActivityUpdated={handleActivityUpdated}
                   />
                 ))}
               </div>
@@ -276,6 +529,9 @@ export default function Dashboard() {
                       goal={goal}
                       activity={activity!}
                       sessions={sessions}
+                      activities={activities}
+                      onGoalUpdated={handleGoalUpdated}
+                      onGoalDeleted={handleGoalDeleted}
                     />
                   );
                 })}
@@ -285,7 +541,7 @@ export default function Dashboard() {
         )}
 
         {activeTab === 'statistics' && statistics && (
-          <StatisticsCard statistics={statistics} activities={activities} checkboxes={checkboxes} />
+          <StatisticsCard statistics={statistics} activities={activities} checkboxes={checkboxes} sessions={sessions} />
         )}
       </div>
 
@@ -303,6 +559,79 @@ export default function Dashboard() {
           onClose={() => setShowAddGoal(false)}
           onGoalAdded={handleGoalAdded}
         />
+      )}
+
+      {/* Compact Manual Time Entry Modal */}
+      {showManualEntry && (
+        <div className="fixed inset-0 bg-white/10 flex items-center justify-center p-4 z-50" style={{ backdropFilter: 'blur(20px)' }}>
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Add Time</h3>
+              <button
+                onClick={() => {
+                  setShowManualEntry(null);
+                  setManualMinutes('');
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Activity: {activities.find(a => a.id === showManualEntry)?.name}
+                </label>
+                <div className="flex items-center mb-4">
+                  <div
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: activities.find(a => a.id === showManualEntry)?.color }}
+                  />
+                  <span className="text-sm text-gray-600">{activities.find(a => a.id === showManualEntry)?.category}</span>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <label htmlFor="compact-minutes" className="block text-sm font-medium text-gray-700 mb-2">
+                  Minutes *
+                </label>
+                <input
+                  type="number"
+                  id="compact-minutes"
+                  value={manualMinutes}
+                  onChange={(e) => setManualMinutes(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. 30"
+                  min="1"
+                  required
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Enter the number of minutes you spent on this activity
+                </p>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => {
+                    setShowManualEntry(null);
+                    setManualMinutes('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => addCompactManualTime(showManualEntry)}
+                  disabled={isAddingTime || !manualMinutes}
+                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isAddingTime ? 'Adding...' : 'Add Time'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

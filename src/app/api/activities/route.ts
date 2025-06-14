@@ -64,11 +64,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
 export async function PUT(request: NextRequest): Promise<NextResponse<ApiResponse<Activity>>> {
   try {
     const body = await request.json();
-    const { id, name, category, color, description, isActive, type, resetPeriod } = body;
+    const { id, name, category, color, description, type, resetPeriod } = body;
 
     if (!id) {
       return NextResponse.json(
         { success: false, error: 'Activity ID is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!name || !category || !color || !type) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields: name, category, color, type' },
+        { status: 400 }
+      );
+    }
+
+    if (type === 'checkbox' && !resetPeriod) {
+      return NextResponse.json(
+        { success: false, error: 'Reset period is required for checkbox activities' },
         { status: 400 }
       );
     }
@@ -85,13 +99,12 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
 
     const updatedActivity: Activity = {
       ...activities[activityIndex],
-      ...(name && { name }),
-      ...(category && { category }),
-      ...(color && { color }),
-      ...(description !== undefined && { description }),
-      ...(isActive !== undefined && { isActive }),
-      ...(type && { type }),
-      ...(resetPeriod !== undefined && { resetPeriod }),
+      name,
+      category,
+      color,
+      description,
+      type,
+      resetPeriod: type === 'checkbox' ? resetPeriod : undefined,
     };
 
     activities[activityIndex] = updatedActivity;

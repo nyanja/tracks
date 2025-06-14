@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import { Play, CheckSquare, Clock, Trash2, MoreVertical } from 'lucide-react';
+import { Play, CheckSquare, Clock, Trash2, MoreVertical, Plus, X, Edit } from 'lucide-react';
 import { Activity } from '@/types';
 import { format } from 'date-fns';
 
@@ -9,13 +9,39 @@ interface ActivityCardProps {
   activity: Activity;
   onSessionUpdate: () => void;
   onActivityDeleted?: () => void;
+  onActivityUpdated?: () => void;
 }
 
-export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted }: ActivityCardProps) {
+// Constants for the edit form (same as AddActivityForm)
+const PRESET_COLORS = [
+  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4',
+  '#EC4899', '#84CC16', '#F97316', '#6366F1', '#14B8A6', '#F43F5E'
+];
+
+const CATEGORIES = [
+  'Learning', 'Exercise', 'Work', 'Reading', 'Creative', 'Music',
+  'Language', 'Health', 'Hobby', 'Social', 'Other'
+];
+
+export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted, onActivityUpdated }: ActivityCardProps) {
   const [isStarting, setIsStarting] = useState(false);
   const [checkboxChecked, setCheckboxChecked] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [showManualEntry, setShowManualEntry] = useState(false);
+  const [manualMinutes, setManualMinutes] = useState('');
+  const [isAddingTime, setIsAddingTime] = useState(false);
+  const [showEditForm, setShowEditForm] = useState(false);
+  const [isUpdating, setIsUpdating] = useState(false);
+
+  // Edit form states
+  const [editName, setEditName] = useState(activity.name);
+  const [editCategory, setEditCategory] = useState(activity.category);
+  const [editColor, setEditColor] = useState(activity.color);
+  const [editDescription, setEditDescription] = useState(activity.description || '');
+  const [editActivityType, setEditActivityType] = useState<'time-tracking' | 'checkbox'>(activity.type);
+  const [editResetPeriod, setEditResetPeriod] = useState<'daily' | 'weekly' | 'monthly'>(activity.resetPeriod || 'daily');
+
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Load checkbox state for checkbox activities
@@ -39,6 +65,16 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted }: A
 
     loadCheckboxState();
   }, [activity.id, activity.type]);
+
+  // Reset edit form when activity changes
+  useEffect(() => {
+    setEditName(activity.name);
+    setEditCategory(activity.category);
+    setEditColor(activity.color);
+    setEditDescription(activity.description || '');
+    setEditActivityType(activity.type);
+    setEditResetPeriod(activity.resetPeriod || 'daily');
+  }, [activity]);
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -77,6 +113,47 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted }: A
     }
   };
 
+  const addManualTime = async () => {
+    const minutes = parseInt(manualMinutes);
+    if (!minutes || minutes <= 0) {
+      alert('Please enter a valid number of minutes');
+      return;
+    }
+
+    setIsAddingTime(true);
+    try {
+      const now = new Date();
+      const startTime = new Date(now.getTime() - minutes * 60 * 1000);
+
+      const response = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          activityId: activity.id,
+          startTime: startTime.toISOString(),
+          endTime: now.toISOString(),
+          duration: minutes * 60, // Convert to seconds
+          date: format(now, 'yyyy-MM-dd'),
+          isRunning: false,
+        }),
+      });
+
+      if (response.ok) {
+        onSessionUpdate();
+        setShowManualEntry(false);
+        setManualMinutes('');
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to add time');
+      }
+    } catch (error) {
+      console.error('Error adding manual time:', error);
+      alert('Failed to add time');
+    } finally {
+      setIsAddingTime(false);
+    }
+  };
+
   const toggleCheckbox = async () => {
     try {
       const today = format(new Date(), 'yyyy-MM-dd');
@@ -109,6 +186,44 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted }: A
     }
   };
 
+  const updateActivity = async () => {
+    if (!editName.trim() || !editCategory) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    setIsUpdating(true);
+    try {
+      const response = await fetch('/api/activities', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: activity.id,
+          name: editName.trim(),
+          category: editCategory,
+          color: editColor,
+          description: editDescription.trim() || undefined,
+          type: editActivityType,
+          resetPeriod: editActivityType === 'checkbox' ? editResetPeriod : undefined,
+        }),
+      });
+
+      if (response.ok) {
+        onActivityUpdated?.();
+        setShowEditForm(false);
+        setShowDropdown(false);
+      } else {
+        const error = await response.json();
+        alert(error.error || 'Failed to update activity');
+      }
+    } catch (error) {
+      console.error('Error updating activity:', error);
+      alert('Failed to update activity');
+    } finally {
+      setIsUpdating(false);
+    }
+  };
+
   const deleteActivity = async () => {
     const confirmed = window.confirm(
       `Are you sure you want to delete "${activity.name}"? This will permanently remove the activity and all its data (sessions, goals, and checkboxes).`
@@ -138,88 +253,356 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted }: A
   };
 
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow relative">
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center">
-          <div
-            className="w-4 h-4 rounded-full mr-3"
-            style={{ backgroundColor: activity.color }}
-          />
-          <h3 className="font-semibold text-gray-900">{activity.name}</h3>
+    <>
+      <div className="bg-white rounded-lg shadow-md p-6 hover:shadow-lg transition-shadow relative">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center">
+            <div
+              className="w-4 h-4 rounded-full mr-3"
+              style={{ backgroundColor: activity.color }}
+            />
+            <h3 className="font-semibold text-gray-900">{activity.name}</h3>
+          </div>
+          <div className="flex items-center space-x-2">
+            <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
+              {activity.category}
+            </span>
+            <div className="relative" ref={dropdownRef}>
+              <button
+                onClick={() => setShowDropdown(!showDropdown)}
+                className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <MoreVertical className="w-4 h-4" />
+              </button>
+              {showDropdown && (
+                <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-32">
+                  <button
+                    onClick={() => {
+                      setShowEditForm(true);
+                      setShowDropdown(false);
+                    }}
+                    className="w-full px-3 py-2 text-left text-gray-700 hover:bg-gray-50 rounded-lg transition-colors flex items-center"
+                  >
+                    <Edit className="w-4 h-4 mr-2" />
+                    Edit
+                  </button>
+                  <button
+                    onClick={deleteActivity}
+                    disabled={isDeleting}
+                    className="w-full px-3 py-2 text-left text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center disabled:opacity-50"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <Clock className="w-4 h-4 mr-2 animate-spin" />
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Delete
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="flex items-center space-x-2">
-          <span className="text-sm text-gray-500 bg-gray-100 px-2 py-1 rounded">
-            {activity.category}
-          </span>
-          <div className="relative" ref={dropdownRef}>
+
+        {activity.description && (
+          <p className="text-gray-600 text-sm mb-4">{activity.description}</p>
+        )}
+
+        <div className="space-y-3">
+          {!activity.type || activity.type === 'time-tracking' ? (
+            <>
+              <button
+                onClick={startSession}
+                disabled={isStarting}
+                className="flex items-center justify-center px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
+              >
+                {isStarting ? (
+                  <>
+                    <Clock className="w-4 h-4 mr-2 animate-spin" />
+                    Starting...
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 mr-2" />
+                    Start Timer
+                  </>
+                )}
+              </button>
+              <button
+                onClick={() => setShowManualEntry(true)}
+                className="flex items-center justify-center px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors w-full"
+              >
+                <Plus className="w-4 h-4 mr-2" />
+                Add Time
+              </button>
+            </>
+          ) : (
             <button
-              onClick={() => setShowDropdown(!showDropdown)}
-              className="p-1 text-gray-400 hover:text-gray-600 transition-colors"
+              onClick={toggleCheckbox}
+              className={`flex items-center justify-center px-4 py-2 rounded-lg transition-colors w-full ${
+                checkboxChecked
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
             >
-              <MoreVertical className="w-4 h-4" />
+              <CheckSquare className={`w-4 h-4 mr-2 ${checkboxChecked ? 'text-white' : 'text-gray-600'}`} />
+              {checkboxChecked ? `✓ Completed ${getPeriodLabel()}` : `Mark as Done ${getPeriodLabel()}`}
             </button>
-            {showDropdown && (
-              <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-32">
-                <button
-                  onClick={deleteActivity}
-                  disabled={isDeleting}
-                  className="w-full px-3 py-2 text-left text-red-600 hover:bg-red-50 rounded-lg transition-colors flex items-center disabled:opacity-50"
+          )}
+        </div>
+      </div>
+
+      {/* Edit Activity Modal */}
+      {showEditForm && (
+        <div className="fixed inset-0 backdrop-blur-md bg-white/10 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h2 className="text-xl font-semibold text-gray-900">Edit Activity</h2>
+              <button
+                onClick={() => setShowEditForm(false)}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); updateActivity(); }} className="p-6 space-y-4">
+              <div>
+                <label htmlFor="edit-name" className="block text-sm font-medium text-gray-700 mb-2">
+                  Activity Name *
+                </label>
+                <input
+                  type="text"
+                  id="edit-name"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g., Spanish Learning"
+                  required
+                />
+              </div>
+
+              <div>
+                <label htmlFor="edit-category" className="block text-sm font-medium text-gray-700 mb-2">
+                  Category *
+                </label>
+                <select
+                  id="edit-category"
+                  value={editCategory}
+                  onChange={(e) => setEditCategory(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  required
                 >
-                  {isDeleting ? (
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Activity Type *
+                </label>
+                <div className="space-y-3">
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="editActivityType"
+                      value="time-tracking"
+                      checked={editActivityType === 'time-tracking'}
+                      onChange={(e) => setEditActivityType(e.target.value as 'time-tracking' | 'checkbox')}
+                      className="mr-3 text-blue-500 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-900">Time Tracking Activity</div>
+                      <div className="text-sm text-gray-500">
+                        Track time spent on prolonged activities (e.g., Spanish learning, reading)
+                      </div>
+                    </div>
+                  </label>
+                  <label className="flex items-center">
+                    <input
+                      type="radio"
+                      name="editActivityType"
+                      value="checkbox"
+                      checked={editActivityType === 'checkbox'}
+                      onChange={(e) => setEditActivityType(e.target.value as 'time-tracking' | 'checkbox')}
+                      className="mr-3 text-blue-500 focus:ring-blue-500"
+                    />
+                    <div>
+                      <div className="font-medium text-gray-900">Checkbox Activity</div>
+                      <div className="text-sm text-gray-500">
+                        Simple checkboxes for daily habits (e.g., drink water, exercise)
+                      </div>
+                    </div>
+                  </label>
+                </div>
+              </div>
+
+              {editActivityType === 'checkbox' && (
+                <div>
+                  <label htmlFor="edit-resetPeriod" className="block text-sm font-medium text-gray-700 mb-2">
+                    Reset Period *
+                  </label>
+                  <select
+                    id="edit-resetPeriod"
+                    value={editResetPeriod}
+                    onChange={(e) => setEditResetPeriod(e.target.value as 'daily' | 'weekly' | 'monthly')}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="daily">Daily (resets every day)</option>
+                    <option value="weekly">Weekly (resets every week)</option>
+                    <option value="monthly">Monthly (resets every month)</option>
+                  </select>
+                  <p className="text-sm text-gray-500 mt-1">
+                    How often the checkbox should reset for checking again
+                  </p>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Color
+                </label>
+                <div className="grid grid-cols-6 gap-2">
+                  {PRESET_COLORS.map((presetColor) => (
+                    <button
+                      key={presetColor}
+                      type="button"
+                      onClick={() => setEditColor(presetColor)}
+                      className={`w-10 h-10 rounded-full border-2 ${
+                        editColor === presetColor ? 'border-gray-800' : 'border-gray-300'
+                      }`}
+                      style={{ backgroundColor: presetColor }}
+                    />
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="edit-description" className="block text-sm font-medium text-gray-700 mb-2">
+                  Description (optional)
+                </label>
+                <textarea
+                  id="edit-description"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="Brief description of the activity..."
+                />
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowEditForm(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdating}
+                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                >
+                  {isUpdating ? (
                     <>
-                      <Clock className="w-4 h-4 mr-2 animate-spin" />
-                      Deleting...
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Updating...
                     </>
                   ) : (
                     <>
-                      <Trash2 className="w-4 h-4 mr-2" />
-                      Delete
+                      <Edit className="w-4 h-4 mr-2" />
+                      Update Activity
                     </>
                   )}
                 </button>
               </div>
-            )}
+            </form>
           </div>
         </div>
-      </div>
-
-      {activity.description && (
-        <p className="text-gray-600 text-sm mb-4">{activity.description}</p>
       )}
 
-      <div className="flex items-center justify-between">
-        {!activity.type || activity.type === 'time-tracking' ? (
-          <button
-            onClick={startSession}
-            disabled={isStarting}
-            className="flex items-center px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors w-full"
-          >
-            {isStarting ? (
-              <>
-                <Clock className="w-4 h-4 mr-2 animate-spin" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4 mr-2" />
-                Start Timer
-              </>
-            )}
-          </button>
-        ) : (
-          <button
-            onClick={toggleCheckbox}
-            className={`flex items-center justify-center px-4 py-2 rounded-lg transition-colors w-full ${
-              checkboxChecked
-                ? 'bg-blue-500 text-white'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            <CheckSquare className={`w-4 h-4 mr-2 ${checkboxChecked ? 'text-white' : 'text-gray-600'}`} />
-            {checkboxChecked ? `✓ Completed ${getPeriodLabel()}` : `Mark as Done ${getPeriodLabel()}`}
-          </button>
-        )}
-      </div>
-    </div>
+      {/* Manual Time Entry Modal */}
+      {showManualEntry && (
+        <div className="fixed inset-0 backdrop-blur-md bg-white/10 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl max-w-sm w-full">
+            <div className="flex items-center justify-between p-6 border-b">
+              <h3 className="text-lg font-semibold text-gray-900">Add Time</h3>
+              <button
+                onClick={() => {
+                  setShowManualEntry(false);
+                  setManualMinutes('');
+                }}
+                className="text-gray-400 hover:text-gray-600 transition-colors"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            <div className="p-6">
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Activity: {activity.name}
+                </label>
+                <div className="flex items-center mb-4">
+                  <div
+                    className="w-3 h-3 rounded-full mr-2"
+                    style={{ backgroundColor: activity.color }}
+                  />
+                  <span className="text-sm text-gray-600">{activity.category}</span>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <label htmlFor="minutes" className="block text-sm font-medium text-gray-700 mb-2">
+                  Minutes *
+                </label>
+                <input
+                  type="number"
+                  id="minutes"
+                  value={manualMinutes}
+                  onChange={(e) => setManualMinutes(e.target.value)}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  placeholder="e.g. 30"
+                  min="1"
+                  required
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  Enter the number of minutes you spent on this activity
+                </p>
+              </div>
+
+              <div className="flex space-x-3">
+                <button
+                  onClick={() => {
+                    setShowManualEntry(false);
+                    setManualMinutes('');
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={addManualTime}
+                  disabled={isAddingTime || !manualMinutes}
+                  className="flex-1 px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  {isAddingTime ? 'Adding...' : 'Add Time'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
   );
 }

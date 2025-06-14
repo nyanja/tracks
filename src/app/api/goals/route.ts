@@ -79,11 +79,25 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
 export async function PUT(request: NextRequest): Promise<NextResponse<ApiResponse<Goal>>> {
   try {
     const body = await request.json();
-    const { id, targetMinutes, endDate, isActive } = body;
+    const { id, activityId, type, targetMinutes, startDate, endDate } = body;
 
     if (!id) {
       return NextResponse.json(
         { success: false, error: 'Goal ID is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!activityId || !type || !targetMinutes || !startDate) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields: activityId, type, targetMinutes, startDate' },
+        { status: 400 }
+      );
+    }
+
+    if (!['daily', 'weekly', 'monthly'].includes(type)) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid goal type. Must be daily, weekly, or monthly' },
         { status: 400 }
       );
     }
@@ -100,9 +114,11 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
 
     const updatedGoal: Goal = {
       ...goals[goalIndex],
-      ...(targetMinutes && { targetMinutes: parseInt(targetMinutes) }),
-      ...(endDate !== undefined && { endDate }),
-      ...(isActive !== undefined && { isActive }),
+      activityId,
+      type,
+      targetMinutes: parseInt(targetMinutes),
+      startDate,
+      endDate,
     };
 
     goals[goalIndex] = updatedGoal;
