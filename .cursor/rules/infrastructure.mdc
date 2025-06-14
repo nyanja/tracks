@@ -1,0 +1,6 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+after implementing a task do not run 'npm run dev', do not build prod version; run 'npm next lint'
