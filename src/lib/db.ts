@@ -16,26 +16,67 @@ export interface QueryOptions {
   params?: unknown[];
 }
 
+// Global variable to store the Prisma client instance
+// This prevents multiple instances during hot reloading in development
+declare global {
+  // eslint-disable-next-line no-var
+  var __prisma: PrismaClient | undefined;
+}
+
+console.log('database client');
 class DatabaseClient {
   private static instance: DatabaseClient;
   private prisma: PrismaClient;
 
   private constructor() {
-    // Get database URL from config
     const config = getConfig();
 
-    this.prisma = new PrismaClient({
-      datasources: {
-        db: {
-          url: config.database.url
-        }
-      },
-      log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
+      if (!global.__prisma) {
+        global.__prisma = new PrismaClient({
+          datasources: {
+            db: {
+              url: config.database.url
+            }
+          },
+          log: ['query', 'error', 'warn'],
+        });
+      }
+      console.log('global.__prisma');
+      this.prisma = global.__prisma;
+
+    // Setup graceful shutdown handlers
+    this.setupShutdownHandlers();
+  }
+
+  private setupShutdownHandlers() {
+    const gracefulShutdown = async (signal: string) => {
+      console.log(`Received ${signal}. Closing database connection...`);
+      await this.close();
+      process.exit(0);
+    };
+
+    // Handle various shutdown signals
+    process.once('SIGINT', () => gracefulShutdown('SIGINT'));
+    process.once('SIGTERM', () => gracefulShutdown('SIGTERM'));
+    process.once('beforeExit', () => gracefulShutdown('beforeExit'));
+
+    // Handle uncaught exceptions and unhandled rejections
+    process.once('uncaughtException', async (err) => {
+      console.error('Uncaught Exception:', err);
+      await this.close();
+      process.exit(1);
+    });
+
+    process.once('unhandledRejection', async (reason, promise) => {
+      console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+      await this.close();
+      process.exit(1);
     });
   }
 
   public static getInstance(): DatabaseClient {
     if (!DatabaseClient.instance) {
+      console.log('new database client');
       DatabaseClient.instance = new DatabaseClient();
     }
     return DatabaseClient.instance;
@@ -529,7 +570,12 @@ class DatabaseClient {
 
   // Close database connection
   async close(): Promise<void> {
-    await this.prisma.$disconnect();
+    try {
+      await this.prisma.$disconnect();
+      console.log('Database connection closed successfully');
+    } catch (error) {
+      console.error('Error closing database connection:', error);
+    }
   }
 
   // Get raw Prisma client for advanced usage
