@@ -1,0 +1,80 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Activity {
+  id            String            @id @db.Uuid
+  name          String            @db.VarChar(255)
+  category      String            @db.VarChar(100)
+  color         String            @db.VarChar(7)
+  description   String?
+  createdAt     DateTime          @map("created_at") @db.Timestamptz(6)
+  isActive      Boolean           @default(true) @map("is_active")
+  type          String            @db.VarChar(20)
+  resetPeriod   String?           @map("reset_period") @db.VarChar(20)
+  goalType      String?           @map("goal_type") @db.VarChar(20)
+  targetMinutes Int?              @map("target_minutes")
+  goalIsActive  Boolean?          @map("goal_is_active")
+  sessions      ActivitySession[]
+  checkboxes    DailyCheckbox[]
+  goals         Goal[]
+
+  @@map("activities")
+}
+
+model ActivitySession {
+  id         String    @id @db.Uuid
+  activityId String    @map("activity_id") @db.Uuid
+  startTime  DateTime  @map("start_time") @db.Timestamptz(6)
+  endTime    DateTime? @map("end_time") @db.Timestamptz(6)
+  duration   Int?
+  date       DateTime  @db.Date
+  notes      String?
+  isRunning  Boolean   @default(false) @map("is_running")
+  activity   Activity  @relation(fields: [activityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([activityId], map: "idx_activity_sessions_activity_id")
+  @@index([date], map: "idx_activity_sessions_date")
+  @@index([isRunning], map: "idx_activity_sessions_is_running")
+  @@map("activity_sessions")
+}
+
+model DailyCheckbox {
+  id         String   @id @db.Uuid
+  activityId String   @map("activity_id") @db.Uuid
+  date       DateTime @db.Date
+  isChecked  Boolean  @default(false) @map("is_checked")
+  notes      String?
+  activity   Activity @relation(fields: [activityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([activityId, date])
+  @@index([activityId], map: "idx_daily_checkboxes_activity_id")
+  @@index([date], map: "idx_daily_checkboxes_date")
+  @@map("daily_checkboxes")
+}
+
+model Goal {
+  id            String   @id @db.Uuid
+  activityId    String   @map("activity_id") @db.Uuid
+  type          String   @db.VarChar(20)
+  targetMinutes Int      @map("target_minutes")
+  startDate     DateTime @map("start_date") @db.Date
+  isActive      Boolean  @default(true) @map("is_active")
+  createdAt     DateTime @map("created_at") @db.Timestamptz(6)
+  activity      Activity @relation(fields: [activityId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([activityId], map: "idx_goals_activity_id")
+  @@map("goals")
+}
+
+model migrations {
+  id          Int       @id @default(autoincrement())
+  filename    String    @unique @db.VarChar(255)
+  executed_at DateTime? @default(now()) @db.Timestamptz(6)
+}

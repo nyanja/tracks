@@ -13,17 +13,6 @@ interface ActivityCardProps {
   onActivityUpdated?: () => void;
 }
 
-// Constants for the edit form (same as AddActivityForm)
-const PRESET_COLORS = [
-  '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4',
-  '#EC4899', '#84CC16', '#F97316', '#6366F1', '#14B8A6', '#F43F5E'
-];
-
-const CATEGORIES = [
-  'Learning', 'Exercise', 'Work', 'Reading', 'Creative', 'Music',
-  'Language', 'Health', 'Hobby', 'Social', 'Other'
-];
-
 export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted, onActivityUpdated }: ActivityCardProps) {
   const [isStarting, setIsStarting] = useState(false);
   const [checkboxChecked, setCheckboxChecked] = useState(false);
@@ -168,7 +157,7 @@ export function ActivityCard({ activity, onSessionUpdate, onActivityDeleted, onA
     }
   };
 
-  const handleActivityUpdated = (updatedActivity: Activity) => {
+  const handleActivityUpdated = () => {
     onActivityUpdated?.();
     setShowEditForm(false);
     setShowDropdown(false);

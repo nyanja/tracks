@@ -5,7 +5,7 @@ import { Activity, ApiResponse } from '@/types';
 
 export async function GET(): Promise<NextResponse<ApiResponse<Activity[]>>> {
   try {
-    const activities = Database.getActivities();
+    const activities = await Database.getActivities();
     return NextResponse.json({ success: true, data: activities });
   } catch (error) {
     console.error('Error fetching activities:', error);
@@ -51,9 +51,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
       goalIsActive: type === 'time-tracking' && goalType && targetMinutes ? true : undefined,
     };
 
-    const activities = Database.getActivities();
+    const activities = await Database.getActivities();
     activities.push(newActivity);
-    Database.saveActivities(activities);
+    await Database.saveActivities(activities);
 
     return NextResponse.json({ success: true, data: newActivity }, { status: 201 });
   } catch (error) {
@@ -91,7 +91,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
       );
     }
 
-    const activities = Database.getActivities();
+    const activities = await Database.getActivities();
     const activityIndex = activities.findIndex((a) => a.id === id);
 
     if (activityIndex === -1) {
@@ -116,7 +116,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
     };
 
     activities[activityIndex] = updatedActivity;
-    Database.saveActivities(activities);
+    await Database.saveActivities(activities);
 
     return NextResponse.json({ success: true, data: updatedActivity });
   } catch (error) {
@@ -140,30 +140,19 @@ export async function DELETE(request: NextRequest): Promise<NextResponse<ApiResp
       );
     }
 
-    const activities = Database.getActivities();
-    const filteredActivities = activities.filter((a) => a.id !== id);
+    // Check if activity exists first
+    const activities = await Database.getActivities();
+    const activityExists = activities.some((a) => a.id === id);
 
-    if (filteredActivities.length === activities.length) {
+    if (!activityExists) {
       return NextResponse.json(
         { success: false, error: 'Activity not found' },
         { status: 404 }
       );
     }
 
-    // Cascade delete: Remove all related data
-
-    // Delete all sessions for this activity
-    const sessions = Database.getSessions();
-    const filteredSessions = sessions.filter((s) => s.activityId !== id);
-    Database.saveSessions(filteredSessions);
-
-    // Delete all checkboxes for this activity
-    const checkboxes = Database.getCheckboxes();
-    const filteredCheckboxes = checkboxes.filter((c) => c.activityId !== id);
-    Database.saveCheckboxes(filteredCheckboxes);
-
-    // Finally delete the activity itself
-    Database.saveActivities(filteredActivities);
+    // Use the new deleteActivity method which handles cascade delete properly
+    await Database.deleteActivity(id);
 
     return NextResponse.json({ success: true, data: null });
   } catch (error) {

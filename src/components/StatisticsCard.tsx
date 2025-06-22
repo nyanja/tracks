@@ -3,6 +3,7 @@
 import { Statistics, Activity, DailyCheckbox, ActivitySession } from '@/types';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { format, subDays } from 'date-fns';
+import { useState, useEffect } from 'react';
 
 interface StatisticsCardProps {
   statistics: Statistics;
@@ -12,6 +13,74 @@ interface StatisticsCardProps {
 }
 
 const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4'];
+
+// Component for individual activity bar chart with correct data
+function ActivityBarChart({ activity, index }: { activity: Activity; index: number }) {
+  const [activityStats, setActivityStats] = useState<Statistics | null>(null);
+
+  useEffect(() => {
+    const fetchActivityStats = async () => {
+      try {
+        const response = await fetch(`/api/statistics?activityId=${activity.id}`);
+        const data = await response.json();
+        if (data.success) {
+          setActivityStats(data.data);
+        }
+      } catch (error) {
+        console.error('Error fetching activity statistics:', error);
+      }
+    };
+
+    fetchActivityStats();
+  }, [activity.id]);
+
+  if (!activityStats) {
+    return (
+      <div className="bg-white rounded-lg shadow p-6">
+        <h4 className="text-lg font-semibold mb-4" style={{ color: activity.color }}>
+          {activity.name}
+        </h4>
+        <div className="h-64 flex items-center justify-center">
+          <div className="text-gray-500">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-lg shadow p-6">
+      <h4 className="text-lg font-semibold mb-4" style={{ color: activity.color }}>
+        {activity.name}
+      </h4>
+      <div className="h-64">
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={activityStats.dailyProgress}>
+            <CartesianGrid strokeDasharray="3 3" />
+            <XAxis
+              dataKey="date"
+              tickFormatter={(value) => {
+                const date = new Date(value);
+                return `${date.getMonth() + 1}/${date.getDate()}`;
+              }}
+            />
+            <YAxis />
+            <Tooltip
+              labelFormatter={(value) => {
+                const date = new Date(value);
+                return date.toLocaleDateString();
+              }}
+              formatter={(value) => [`${value} minutes`, 'Time']}
+            />
+            <Bar
+              dataKey="totalMinutes"
+              fill={activity.color || COLORS[index % COLORS.length]}
+            />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
+}
 
 // Component for the checkbox activity grid visualization
 function CheckboxActivityGrid({ activity, checkboxes }: { activity: Activity; checkboxes: DailyCheckbox[] }) {
@@ -138,7 +207,7 @@ function CheckboxActivityGrid({ activity, checkboxes }: { activity: Activity; ch
   );
 }
 
-export function StatisticsCard({ statistics, activities, checkboxes, sessions }: StatisticsCardProps) {
+export function StatisticsCard({ statistics, activities, checkboxes }: StatisticsCardProps) {
   // Filter checkbox activities
   const checkboxActivities = activities.filter(activity => activity.type === 'checkbox' && activity.isActive);
 
@@ -212,61 +281,9 @@ export function StatisticsCard({ statistics, activities, checkboxes, sessions }:
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             {activities
               .filter(activity => activity.type === 'time-tracking' && activity.isActive)
-              .map((activity, index) => {
-                // Create daily progress data for this specific activity using actual session data
-                const activityDailyData = statistics.dailyProgress.map(day => {
-                  // Filter sessions for this activity and date
-                  const daySessions = sessions.filter(session =>
-                    session.activityId === activity.id &&
-                    session.date === day.date &&
-                    session.duration
-                  );
-
-                  // Calculate total minutes for this activity on this day
-                  const totalMinutes = daySessions.reduce((total, session) =>
-                    total + (session.duration || 0), 0
-                  ) / 60; // Convert from seconds to minutes
-
-                  return {
-                    ...day,
-                    totalMinutes: Math.round(totalMinutes)
-                  };
-                });
-
-                return (
-                  <div key={activity.id} className="bg-white rounded-lg shadow p-6">
-                    <h4 className="text-lg font-semibold mb-4" style={{ color: activity.color }}>
-                      {activity.name}
-                    </h4>
-                    <div className="h-64">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <BarChart data={activityDailyData}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis
-                            dataKey="date"
-                            tickFormatter={(value) => {
-                              const date = new Date(value);
-                              return `${date.getMonth() + 1}/${date.getDate()}`;
-                            }}
-                          />
-                          <YAxis />
-                          <Tooltip
-                            labelFormatter={(value) => {
-                              const date = new Date(value);
-                              return date.toLocaleDateString();
-                            }}
-                            formatter={(value) => [`${value} minutes`, 'Time']}
-                          />
-                          <Bar
-                            dataKey="totalMinutes"
-                            fill={activity.color || COLORS[index % COLORS.length]}
-                          />
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  </div>
-                );
-              })}
+              .map((activity, index) => (
+                <ActivityBarChart key={activity.id} activity={activity} index={index} />
+              ))}
           </div>
         </div>
       )}

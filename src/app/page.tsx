@@ -28,22 +28,42 @@ export default function Dashboard() {
   // Fetch data
   const fetchData = async () => {
     try {
-      const [activitiesRes, sessionsRes, statisticsRes, checkboxesRes] = await Promise.all([
+      const today = format(new Date(), 'yyyy-MM-dd');
+
+      const [activitiesRes, todaySessionsRes, runningSessionsRes, statisticsRes, checkboxesRes] = await Promise.all([
         fetch('/api/activities'),
-        fetch('/api/sessions'),
+        fetch(`/api/sessions?date=${today}`),
+        fetch('/api/sessions?isRunning=true'),
         fetch('/api/statistics'),
         fetch('/api/checkboxes'),
       ]);
 
       const activitiesData = await activitiesRes.json();
-      const sessionsData = await sessionsRes.json();
+      const todaySessionsData = await todaySessionsRes.json();
+      const runningSessionsData = await runningSessionsRes.json();
       const statisticsData = await statisticsRes.json();
       const checkboxesData = await checkboxesRes.json();
 
-      if (activitiesData.success) setActivities(activitiesData.data);
-      if (sessionsData.success) setSessions(sessionsData.data);
+      if (activitiesData.success) setActivities(Array.isArray(activitiesData.data) ? activitiesData.data : []);
+
+      // Combine today's sessions and running sessions, avoiding duplicates
+      const allSessions: ActivitySession[] = [];
+      if (todaySessionsData.success) {
+        allSessions.push(...(Array.isArray(todaySessionsData.data) ? todaySessionsData.data : []));
+      }
+      if (runningSessionsData.success) {
+        const runningSessions = Array.isArray(runningSessionsData.data) ? runningSessionsData.data : [];
+        // Add running sessions that aren't already in today's sessions
+        runningSessions.forEach((runningSession: ActivitySession) => {
+          if (!allSessions.some(session => session.id === runningSession.id)) {
+            allSessions.push(runningSession);
+          }
+        });
+      }
+      setSessions(allSessions);
+
       if (statisticsData.success) setStatistics(statisticsData.data);
-      if (checkboxesData.success) setCheckboxes(checkboxesData.data);
+      if (checkboxesData.success) setCheckboxes(Array.isArray(checkboxesData.data) ? checkboxesData.data : []);
     } catch (error) {
       console.error('Error fetching data:', error);
     } finally {
@@ -61,8 +81,6 @@ export default function Dashboard() {
     fetchData(); // Refresh statistics
   };
 
-
-
   const handleSessionUpdate = () => {
     fetchData(); // Refresh all data when sessions are updated
   };
@@ -74,8 +92,6 @@ export default function Dashboard() {
   const handleActivityUpdated = () => {
     fetchData(); // Refresh all data when an activity is updated
   };
-
-
 
   const handleCheckboxToggle = async (activityId: string) => {
     try {
@@ -189,12 +205,12 @@ export default function Dashboard() {
     }
   };
 
-  const runningSessions = sessions.filter((s) => s.isRunning);
+  const runningSessions = Array.isArray(sessions) ? sessions.filter((s) => s.isRunning) : [];
 
   // Get today's data
   const today = format(new Date(), 'yyyy-MM-dd');
-  const todaySessions = sessions.filter(s => s.date === today && s.duration);
-  const todayCheckboxes = checkboxes.filter(c => c.date === today);
+  const todaySessions = Array.isArray(sessions) ? sessions.filter(s => s.date === today && s.duration) : [];
+  const todayCheckboxes = Array.isArray(checkboxes) ? checkboxes.filter(c => c.date === today) : [];
 
   // Calculate activity progress for today
   const getActivityProgress = (activityId: string) => {
@@ -202,7 +218,7 @@ export default function Dashboard() {
       .filter(s => s.activityId === activityId)
       .reduce((total, session) => total + (session.duration || 0), 0) / 60;
 
-    const activity = activities.find(a => a.id === activityId);
+    const activity = Array.isArray(activities) ? activities.find(a => a.id === activityId) : null;
     const hasValidGoal = activity && activity.goalIsActive && activity.goalType === 'daily' && activity.targetMinutes;
 
     return {
@@ -223,8 +239,8 @@ export default function Dashboard() {
   }
 
   // Filter activities for quick stats
-  const timeTrackingActivities = activities.filter(a => a.type === 'time-tracking' && a.isActive);
-  const checkboxActivities = activities.filter(a => a.type === 'checkbox' && a.isActive);
+  const timeTrackingActivities = Array.isArray(activities) ? activities.filter(a => a.type === 'time-tracking' && a.isActive) : [];
+  const checkboxActivities = Array.isArray(activities) ? activities.filter(a => a.type === 'checkbox' && a.isActive) : [];
   const checkedToday = checkboxActivities.filter(a =>
     todayCheckboxes.some(c => c.activityId === a.id && c.isChecked)
   );
@@ -235,13 +251,6 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-100">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header */}
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Activity Tracker</h1>
-          <p className="text-gray-600 mt-2">
-            Track your activities, set goals, and monitor your progress
-          </p>
-        </div>
 
         {/* Quick Stats */}
         <div className="bg-white rounded-lg shadow p-6 mb-8">
@@ -252,6 +261,7 @@ export default function Dashboard() {
               <div className="space-y-3">
                 {timeTrackingActivities.map(activity => {
                   const progress = getActivityProgress(activity.id);
+
                   const percentage = progress.target > 0 ? (progress.current / progress.target) * 100 : 0;
                   const runningSession = runningSessions.find(s => s.activityId === activity.id);
 
@@ -388,11 +398,12 @@ export default function Dashboard() {
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {runningSessions.map((session) => {
-                const activity = activities.find((a) => a.id === session.activityId);
+                const activity = Array.isArray(activities) ? activities.find((a) => a.id === session.activityId) : null;
+                if (!activity) return null;
                 return (
                   <TimerCard
                     key={session.id}
-                    activity={activity!}
+                    activity={activity}
                     session={session}
                     onSessionUpdate={handleSessionUpdate}
                   />
@@ -466,8 +477,6 @@ export default function Dashboard() {
           </div>
         )}
 
-
-
         {activeTab === 'statistics' && statistics && (
           <StatisticsCard statistics={statistics} activities={activities} checkboxes={checkboxes} sessions={sessions} />
         )}
@@ -480,8 +489,6 @@ export default function Dashboard() {
           onActivityAdded={handleActivityAdded}
         />
       )}
-
-
 
       {/* Compact Manual Time Entry Modal */}
       {showManualEntry && (

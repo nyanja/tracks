@@ -11,7 +11,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     const date = url.searchParams.get('date');
     const isRunning = url.searchParams.get('isRunning');
 
-    let sessions = Database.getSessions();
+    let sessions = await Database.getSessions();
 
     // Filter by activityId if provided
     if (activityId) {
@@ -66,9 +66,9 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
         isRunning: providedIsRunning !== undefined ? providedIsRunning : false,
       };
 
-      const sessions = Database.getSessions();
+      const sessions = await Database.getSessions();
       sessions.push(newSession);
-      Database.saveSessions(sessions);
+      await Database.saveSessions(sessions);
 
       return NextResponse.json({ success: true, data: newSession }, { status: 201 });
     }
@@ -78,7 +78,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     const date = format(now, 'yyyy-MM-dd');
 
     // Check if there's already a running session for this activity
-    const sessions = Database.getSessions();
+    const sessions = await Database.getSessions();
     const runningSession = sessions.find(
       (s) => s.activityId === activityId && s.isRunning
     );
@@ -100,7 +100,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     };
 
     sessions.push(newSession);
-    Database.saveSessions(sessions);
+    await Database.saveSessions(sessions);
 
     return NextResponse.json({ success: true, data: newSession }, { status: 201 });
   } catch (error) {
@@ -124,7 +124,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
       );
     }
 
-    const sessions = Database.getSessions();
+    const sessions = await Database.getSessions();
     const sessionIndex = sessions.findIndex((s) => s.id === id);
 
     if (sessionIndex === -1) {
@@ -157,7 +157,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
     };
 
     sessions[sessionIndex] = updatedSession;
-    Database.saveSessions(sessions);
+    await Database.saveSessions(sessions);
 
     return NextResponse.json({ success: true, data: updatedSession });
   } catch (error) {
@@ -181,7 +181,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse<ApiResp
       );
     }
 
-    const sessions = Database.getSessions();
+    const sessions = await Database.getSessions();
     const filteredSessions = sessions.filter((s) => s.id !== id);
 
     if (filteredSessions.length === sessions.length) {
@@ -191,7 +191,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse<ApiResp
       );
     }
 
-    Database.saveSessions(filteredSessions);
+    await Database.saveSessions(filteredSessions);
 
     return NextResponse.json({ success: true, data: null });
   } catch (error) {

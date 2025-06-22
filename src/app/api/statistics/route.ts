@@ -8,8 +8,12 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     const url = new URL(request.url);
     const activityId = url.searchParams.get('activityId');
 
-    const activities = Database.getActivities();
-    const sessions = Database.getSessions();
+    const activities = await Database.getActivities();
+    const sessions = await Database.getSessions();
+
+    // Load external Spanish data
+    const dreamingSpanishData = await Database.getDreamingSpanishData();
+    const spanishActivityId = '3f4f9a6f-fe2f-4b37-9dc6-74739c0c8a74'; // Español activity ID
 
     const now = new Date();
     const today = startOfDay(now);
@@ -22,9 +26,10 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
       filteredSessions = sessions.filter((s) => s.activityId === activityId);
     }
 
-    // Helper function to get total minutes for sessions within a date range
+    // Helper function to get total minutes for sessions within a date range, including external data
     const getTotalMinutes = (fromDate: Date, toDate?: Date) => {
-      return filteredSessions
+      // Get regular session minutes
+      const sessionMinutes = filteredSessions
         .filter((session) => {
           if (!session.duration) return false;
           const sessionDate = new Date(session.startTime);
@@ -34,6 +39,22 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
           return isAfter(sessionDate, fromDate) || sessionDate.getTime() === fromDate.getTime();
         })
         .reduce((total, session) => total + (session.duration || 0), 0) / 60; // Convert to minutes
+
+      // Add external Spanish data if we're looking at the Spanish activity or all activities
+      let externalMinutes = 0;
+      if (!activityId || activityId === spanishActivityId) {
+        externalMinutes = dreamingSpanishData
+          .filter((entry) => {
+            const entryDate = new Date(entry.date + 'T00:00:00');
+            if (toDate) {
+              return isWithinInterval(entryDate, { start: fromDate, end: toDate });
+            }
+            return isAfter(entryDate, fromDate) || entryDate.getTime() === fromDate.getTime();
+          })
+          .reduce((total, entry) => total + entry.timeSeconds, 0) / 60; // Convert to minutes
+      }
+
+      return sessionMinutes + externalMinutes;
     };
 
     // Calculate totals
@@ -41,20 +62,28 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     const totalTimeWeek = getTotalMinutes(weekStart);
     const totalTimeMonth = getTotalMinutes(monthStart);
 
-    // Calculate streak (consecutive days with activity)
+    // Calculate streak (consecutive days with activity), including external data
     let streakDays = 0;
     for (let i = 0; i < 365; i++) {
       const checkDate = subDays(today, i);
       const dayStart = startOfDay(checkDate);
       const dayEnd = new Date(dayStart.getTime() + 24 * 60 * 60 * 1000);
+      const dateStr = format(checkDate, 'yyyy-MM-dd');
 
-      const hasActivity = filteredSessions.some((session) => {
+      // Check regular sessions
+      const hasSessionActivity = filteredSessions.some((session) => {
         if (!session.duration) return false;
         const sessionDate = new Date(session.startTime);
         return isWithinInterval(sessionDate, { start: dayStart, end: dayEnd });
       });
 
-      if (hasActivity) {
+      // Check external Spanish data if applicable
+      let hasExternalActivity = false;
+      if (!activityId || activityId === spanishActivityId) {
+        hasExternalActivity = dreamingSpanishData.some((entry) => entry.date === dateStr);
+      }
+
+      if (hasSessionActivity || hasExternalActivity) {
         streakDays++;
       } else if (i > 0) {
         // Stop counting if we hit a day without activity (but not today)
@@ -77,31 +106,50 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
         s.duration
       );
 
-      const totalMinutes = goalSessions.reduce((total, session) =>
+      let totalMinutes = goalSessions.reduce((total, session) =>
         total + (session.duration || 0), 0) / 60;
+
+      // Add external Spanish data for today if this is the Spanish activity
+      if (activity.id === spanishActivityId) {
+        const todayStr = format(today, 'yyyy-MM-dd');
+        const externalMinutesToday = dreamingSpanishData
+          .filter(entry => entry.date === todayStr)
+          .reduce((total, entry) => total + entry.timeSeconds, 0) / 60;
+        totalMinutes += externalMinutesToday;
+      }
 
       return totalMinutes >= activity.targetMinutes!;
     }).length;
 
-    // Calculate daily progress for the last 30 days
+    // Calculate daily progress for the last 30 days, including external data
     const dailyProgress = [];
     for (let i = 29; i >= 0; i--) {
       const date = subDays(today, i);
       const dateStr = format(date, 'yyyy-MM-dd');
 
+      // Regular session minutes
       const dayMinutes = filteredSessions
         .filter((session) => session.date === dateStr && session.duration)
         .reduce((total, session) => total + (session.duration || 0), 0) / 60;
 
+      // External Spanish minutes if applicable
+      let externalMinutes = 0;
+      if (!activityId || activityId === spanishActivityId) {
+        externalMinutes = dreamingSpanishData
+          .filter((entry) => entry.date === dateStr)
+          .reduce((total, entry) => total + entry.timeSeconds, 0) / 60;
+      }
+
       dailyProgress.push({
         date: dateStr,
-        totalMinutes: Math.round(dayMinutes),
+        totalMinutes: Math.round(dayMinutes + externalMinutes),
       });
     }
 
-    // Calculate activity breakdown
+    // Calculate activity breakdown, including external data
     const activityStats = new Map<string, { name: string; minutes: number }>();
 
+    // Process regular sessions
     filteredSessions
       .filter((session) => session.duration)
       .forEach((session) => {
@@ -112,6 +160,19 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
           activityStats.set(activity.id, current);
         }
       });
+
+    // Add external Spanish data if applicable
+    if (!activityId || activityId === spanishActivityId) {
+      const spanishActivity = activities.find(a => a.id === spanishActivityId);
+      if (spanishActivity) {
+        const externalTotalMinutes = dreamingSpanishData
+          .reduce((total, entry) => total + entry.timeSeconds, 0) / 60;
+
+        const current = activityStats.get(spanishActivityId) || { name: spanishActivity.name, minutes: 0 };
+        current.minutes += externalTotalMinutes;
+        activityStats.set(spanishActivityId, current);
+      }
+    }
 
     const totalMinutes = Array.from(activityStats.values())
       .reduce((total, stat) => total + stat.minutes, 0);

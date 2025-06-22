@@ -105,9 +105,11 @@ export function AddActivityForm({ onClose, onActivityAdded, editingActivity, onA
   };
 
   return (
-    <div className="fixed inset-0 backdrop-blur-md bg-white/10 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-md w-full">
-        <div className="flex items-center justify-between p-6 border-b">
+    <div className="fixed inset-0 backdrop-blur-md bg-white/10 flex items-center justify-center p-4 z-50"
+         onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl max-w-md w-full"
+           onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between pt-4 px-6">
           <h2 className="text-xl font-semibold text-gray-900">
             {isEditMode ? 'Edit Activity' : 'Add New Activity'}
           </h2>
@@ -122,7 +124,7 @@ export function AddActivityForm({ onClose, onActivityAdded, editingActivity, onA
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div>
             <label htmlFor="name" className="block text-sm font-medium text-gray-700 mb-2">
-              Activity Name *
+              Name *
             </label>
             <input
               type="text"
@@ -135,7 +137,8 @@ export function AddActivityForm({ onClose, onActivityAdded, editingActivity, onA
             />
           </div>
 
-          <div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
             <label htmlFor="category" className="block text-sm font-medium text-gray-700 mb-2">
               Category *
             </label>
@@ -153,45 +156,22 @@ export function AddActivityForm({ onClose, onActivityAdded, editingActivity, onA
                 </option>
               ))}
             </select>
-          </div>
+            </div>
+            <div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label htmlFor="activityType" className="block text-sm font-medium text-gray-700 mb-2">
               Activity Type *
             </label>
-            <div className="space-y-3">
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="activityType"
-                  value="time-tracking"
-                  checked={activityType === 'time-tracking'}
-                  onChange={(e) => setActivityType(e.target.value as 'time-tracking' | 'checkbox')}
-                  className="mr-3 text-blue-500 focus:ring-blue-500"
-                />
-                <div>
-                  <div className="font-medium text-gray-900">Time Tracking Activity</div>
-                  <div className="text-sm text-gray-500">
-                    Track time spent on prolonged activities (e.g., Spanish learning, reading)
-                  </div>
-                </div>
-              </label>
-              <label className="flex items-center">
-                <input
-                  type="radio"
-                  name="activityType"
-                  value="checkbox"
-                  checked={activityType === 'checkbox'}
-                  onChange={(e) => setActivityType(e.target.value as 'time-tracking' | 'checkbox')}
-                  className="mr-3 text-blue-500 focus:ring-blue-500"
-                />
-                <div>
-                  <div className="font-medium text-gray-900">Checkbox Activity</div>
-                  <div className="text-sm text-gray-500">
-                    Simple checkboxes for daily habits (e.g., drink water, exercise)
-                  </div>
-                </div>
-              </label>
+            <select
+              id="activityType"
+              value={activityType}
+              onChange={(e) => setActivityType(e.target.value as 'time-tracking' | 'checkbox')}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              required
+            >
+              <option value="time-tracking">Time Tracking</option>
+                <option value="checkbox">Checkbox</option>
+              </select>
             </div>
           </div>
 
@@ -217,21 +197,7 @@ export function AddActivityForm({ onClose, onActivityAdded, editingActivity, onA
           )}
 
           {activityType === 'time-tracking' && (
-            <div className="space-y-4 p-4 bg-gray-50 rounded-lg">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-gray-700">Goal Settings</h3>
-                <label className="flex items-center">
-                  <input
-                    type="checkbox"
-                    checked={goalIsActive}
-                    onChange={(e) => setGoalIsActive(e.target.checked)}
-                    className="mr-2 text-blue-500 focus:ring-blue-500"
-                  />
-                  <span className="text-sm text-gray-600">Enable Goal</span>
-                </label>
-              </div>
-
-              {goalIsActive && (
+            <div className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label htmlFor="goalType" className="block text-sm font-medium text-gray-700 mb-2">
@@ -264,7 +230,6 @@ export function AddActivityForm({ onClose, onActivityAdded, editingActivity, onA
                     />
                   </div>
                 </div>
-              )}
             </div>
           )}
 
@@ -285,20 +250,6 @@ export function AddActivityForm({ onClose, onActivityAdded, editingActivity, onA
                 />
               ))}
             </div>
-          </div>
-
-          <div>
-            <label htmlFor="description" className="block text-sm font-medium text-gray-700 mb-2">
-              Description (optional)
-            </label>
-            <textarea
-              id="description"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={3}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-              placeholder="Brief description of the activity..."
-            />
           </div>
 
           <div className="flex space-x-3 pt-4">

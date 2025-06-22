@@ -9,7 +9,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<ApiRespons
     const activityId = url.searchParams.get('activityId');
     const date = url.searchParams.get('date');
 
-    let checkboxes = Database.getCheckboxes();
+    let checkboxes = await Database.getCheckboxes();
 
     // Filter by activityId if provided
     if (activityId) {
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     }
 
     // Check if checkbox already exists for this activity and date
-    const checkboxes = Database.getCheckboxes();
+    const checkboxes = await Database.getCheckboxes();
     const existingCheckbox = checkboxes.find(
       (c) => c.activityId === activityId && c.date === date
     );
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
         existingCheckbox.notes = notes;
       }
 
-      Database.saveCheckboxes(checkboxes);
+      await Database.saveCheckboxes(checkboxes);
       return NextResponse.json({ success: true, data: existingCheckbox });
     }
 
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<ApiRespon
     };
 
     checkboxes.push(newCheckbox);
-    Database.saveCheckboxes(checkboxes);
+    await Database.saveCheckboxes(checkboxes);
 
     return NextResponse.json({ success: true, data: newCheckbox }, { status: 201 });
   } catch (error) {
@@ -94,7 +94,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
       );
     }
 
-    const checkboxes = Database.getCheckboxes();
+    const checkboxes = await Database.getCheckboxes();
     const checkboxIndex = checkboxes.findIndex((c) => c.id === id);
 
     if (checkboxIndex === -1) {
@@ -111,7 +111,7 @@ export async function PUT(request: NextRequest): Promise<NextResponse<ApiRespons
     };
 
     checkboxes[checkboxIndex] = updatedCheckbox;
-    Database.saveCheckboxes(checkboxes);
+    await Database.saveCheckboxes(checkboxes);
 
     return NextResponse.json({ success: true, data: updatedCheckbox });
   } catch (error) {
@@ -135,7 +135,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse<ApiResp
       );
     }
 
-    const checkboxes = Database.getCheckboxes();
+    const checkboxes = await Database.getCheckboxes();
     const filteredCheckboxes = checkboxes.filter((c) => c.id !== id);
 
     if (filteredCheckboxes.length === checkboxes.length) {
@@ -145,7 +145,7 @@ export async function DELETE(request: NextRequest): Promise<NextResponse<ApiResp
       );
     }
 
-    Database.saveCheckboxes(filteredCheckboxes);
+    await Database.saveCheckboxes(filteredCheckboxes);
 
     return NextResponse.json({ success: true, data: null });
   } catch (error) {
